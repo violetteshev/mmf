@@ -11,15 +11,15 @@ def get_grid(args):
 
     return [
         hyperparam("run_type", "train_val"),
-        hyperparam("config", "projects/visual_bert/configs/vqa2/defaults.yaml"),
+        hyperparam("config", "projects/mmf_transformer/configs/okvqa/defaults.yaml"),
         # hyperparam("--fp16", save_dir_key=lambda val: "fp16"),
         hyperparam("training.num_workers", 5),
-        hyperparam("dataset", "vqa2"),
-        hyperparam("model", "visual_bert", save_dir_key=lambda val: val),
+        hyperparam("dataset", "okvqa"),
+        hyperparam("model", "mmf_transformer", save_dir_key=lambda val: val),
         # For nlvr2, we are able to fit batch of size 16 on single GPU with 16GB
         # memory. Same number is 32 for VQA2, so scale accordingly
         hyperparam(
-            "training.batch_size", [512, 256], save_dir_key=lambda val: f"bs{val}"
+            "training.batch_size", [32, 64], save_dir_key=lambda val: f"bs{val}"
         ),
         hyperparam("training.seed", 1, save_dir_key=lambda val: f"s{val}"),
         hyperparam("scheduler.type", ["warmup_cosine"]),
@@ -35,15 +35,15 @@ def get_grid(args):
         ),
         hyperparam("training.log_format", "json"),
         hyperparam("training.pin_memory", True),
-        hyperparam("training.log_interval", 1000),
-        hyperparam("training.checkpoint_interval", 1000),
-        hyperparam("training.evaluation_interval", 4000),
+        hyperparam("training.log_interval", 500),
+        hyperparam("training.checkpoint_interval", 500),
+        hyperparam("training.evaluation_interval", 500),
         hyperparam("training.find_unused_parameters", True),
-        hyperparam(
-            "model_config.visual_bert.freeze_base",
-            [False],
-            save_dir_key=lambda val: f"fb{val}",
-        ),
+        # hyperparam(
+        #     "model_config.visual_bert.freeze_base",
+        #     [False],
+        #     save_dir_key=lambda val: f"fb{val}",
+        # ),
     ]
 
 
