@@ -33,11 +33,20 @@ def filter_answers(answers_dset, min_occurence):
     answer_list = []
     evalai_answer_processor = EvalAIAnswerProcessor()
     for ans_entry in answers_dset:
-        gtruth = ans_entry["multiple_choice_answer"]
-        gtruth = evalai_answer_processor(gtruth)
-        if gtruth not in occurence:
-            occurence[gtruth] = set()
-        occurence[gtruth].add(ans_entry["question_id"])
+        if "multiple_choice_answer" in ans_entry:
+            gtruth = ans_entry["multiple_choice_answer"]
+            gtruth = evalai_answer_processor(gtruth)
+            if gtruth not in occurence:
+                occurence[gtruth] = set()
+            occurence[gtruth].add(ans_entry["question_id"])
+        else:
+            for ans in ans_entry["answers"]:
+                gtruth = ans["answer"]
+                gtruth = evalai_answer_processor(gtruth)
+                if gtruth not in occurence:
+                    occurence[gtruth] = set()
+                occurence[gtruth].add(ans_entry["question_id"])
+        
     for answer in occurence.keys():
         if len(occurence[answer]) >= min_occurence:
             answer_list.append(answer)
