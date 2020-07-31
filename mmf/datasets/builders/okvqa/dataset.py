@@ -5,7 +5,6 @@ import torch
 
 from mmf.common.sample import Sample
 from mmf.common.typings import MMFDatasetConfigType
-from mmf.datasets.builders.okvqa.database import OKVQAAnnotationDatabase
 from mmf.datasets.mmf_dataset import MMFDataset
 
 
