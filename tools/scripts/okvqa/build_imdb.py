@@ -25,6 +25,7 @@ def get_imdb(ann_path: str, quest_path: str, split: str, answer_vocab_path: str)
     for ann in annotations:
         gt_answers[ann["question_id"]] = ann["answers"]
     
+    count = 0
     for quest in tqdm(questions):
         image_name = f"COCO_{split}_{quest['image_id']:012d}"
         q_id = quest["question_id"]
@@ -32,8 +33,8 @@ def get_imdb(ann_path: str, quest_path: str, split: str, answer_vocab_path: str)
         answers = [ans for ans in all_answers if ans in answer_vocab]
 
         if len(answers) == 0:
-            print(quest)
-            exit()
+            answers = ["<unk>"]
+            count += 1
     
         entry = {
             "image_name": image_name,
@@ -47,6 +48,7 @@ def get_imdb(ann_path: str, quest_path: str, split: str, answer_vocab_path: str)
         }
 
         imdb.append(entry)
+    print("Unknown questions:", count)
 
     return np.array(imdb)
 
