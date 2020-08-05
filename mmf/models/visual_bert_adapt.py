@@ -8,7 +8,7 @@ from copy import deepcopy
 import torch
 from omegaconf import OmegaConf
 from torch import nn
-from transformers.modeling_bert import (
+from mmf.models.transformers.adapters import (
     BertConfig,
     BertEncoder,
     BertForPreTraining,
@@ -16,6 +16,7 @@ from transformers.modeling_bert import (
     BertPooler,
     BertPredictionHeadTransform,
     BertPreTrainedModel,
+    AdapterConfig,
 )
 
 from mmf.common.registry import registry
@@ -48,13 +49,14 @@ class AdaptVisualBERTBase(BertPreTrainedModel):
         config.output_attentions = output_attentions
         config.output_hidden_states = output_hidden_states
 
+        adapter_config = AdapterConfig()
         self.embeddings = BertVisioLinguisticEmbeddings(config)
-        self.encoder = BertEncoder(config)
+        self.encoder = BertEncoder(config, adapter_config)
         self.pooler = BertPooler(config)
         self.bypass_transformer = config.bypass_transformer
 
         if self.bypass_transformer:
-            self.additional_layer = BertLayer(config)
+            self.additional_layer = BertLayer(config, adapter_config)
 
         self.output_attentions = self.config.output_attentions
         self.output_hidden_states = self.config.output_hidden_states
