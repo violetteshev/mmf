@@ -402,7 +402,11 @@ class AdaptVisualBERT(BaseModel):
             self.model.bert.embeddings.initialize_visual_from_pretrained()
 
         if getattr(self.config, "freeze_base", False):
-            for p in self.model.bert.parameters():
+            for name, p in self.model.bert.named_parameters():
+                if "adapter" in name:
+                    continue
+                if "encoder" in name and "LayerNorm" in name:
+                    continue
                 p.requires_grad = False
 
     def flatten(self, sample_list, to_be_flattened=None, to_be_flattened_dim=None):
