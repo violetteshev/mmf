@@ -24,8 +24,31 @@ class OKVQADataset(MMFDataset):
         else:
             name = "okvqa"
         super().__init__(name, config, dataset_type, index, *args, **kwargs)
+        self._should_fast_read = self.config.get("fast_read", False)
 
-    def __getitem__(self, idx: int) -> Type[Sample]:
+    def try_fast_read(self):
+        # Don't fast read in case of test set.
+        if self._dataset_type == "test":
+            return
+
+        if hasattr(self, "_should_fast_read") and self._should_fast_read is True:
+            self.writer.write(
+                "Starting to fast read {} {} dataset".format(
+                    self.dataset_name, self.dataset_type
+                )
+            )
+            self.cache = {}
+            for idx in range(len(self.annotation_db)):
+                self.cache[idx] = self.load_item(idx)
+            self.writer.write("Finish fast read")
+
+    def __getitem__(self, idx):
+        if self._should_fast_read is True and self._dataset_type != "test":
+            return self.cache[idx]
+        else:
+            return self.load_item(idx)
+    
+    def load_item(self, idx: int) -> Type[Sample]:
         sample_info = self.annotation_db[idx]
         current_sample = Sample()
 

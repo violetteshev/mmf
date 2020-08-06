@@ -1,9 +1,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import csv
 import json
+import logging
 import os
 
-import torch
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 
@@ -19,13 +19,14 @@ from mmf.utils.general import (
 )
 from mmf.utils.timer import Timer
 
+logger = logging.getLogger(__name__)
+
 
 class TestReporter(Dataset):
     def __init__(self, multi_task_instance):
         self.test_task = multi_task_instance
         self.task_type = multi_task_instance.dataset_type
         self.config = registry.get("config")
-        self.writer = registry.get("writer")
         self.report = []
         self.timer = Timer()
         self.training_config = self.config.training
@@ -64,7 +65,7 @@ class TestReporter(Dataset):
             return False
         else:
             self.current_dataset = self.datasets[self.current_dataset_idx]
-            self.writer.write("Predicting for " + self.current_dataset.dataset_name)
+            logger.info(f"Predicting for {self.current_dataset.dataset_name}")
             return True
 
     def flush_report(self):
@@ -90,10 +91,8 @@ class TestReporter(Dataset):
             filepath = os.path.join(self.report_folder, filename + ".json")
             self.json_dump(filepath)
 
-        self.writer.write(
-            "Wrote evalai predictions for {} to {}".format(
-                name, os.path.abspath(filepath)
-            )
+        logger.info(
+            f"Wrote evalai predictions for {name} to {os.path.abspath(filepath)}"
         )
         self.report = []
 
@@ -117,7 +116,7 @@ class TestReporter(Dataset):
             ),
             num_workers=self.num_workers,
             pin_memory=self.config.training.pin_memory,
-            **other_args
+            **other_args,
         )
 
     def _add_extra_args_for_dataloader(self, other_args=None):
@@ -145,23 +144,15 @@ class TestReporter(Dataset):
         return self.current_dataset[idx]
 
     def add_to_report(self, report, model):
-        # TODO: Later gather whole report for no opinions
-        if self.current_dataset.dataset_name == "coco":
-            report.captions = gather_tensor(report.captions)
-            if isinstance(report.image_id, torch.Tensor):
-                report.image_id = gather_tensor(report.image_id).view(-1)
-        else:
-            report.scores = gather_tensor(report.scores).view(
-                -1, report.scores.size(-1)
-            )
-            keys = ["id", "question_id", "image_id", "context_tokens"]
-            for key in keys:
-                report = self.reshape_and_gather(report, key)
+        keys = ["id", "question_id", "image_id", "context_tokens", "captions", "scores"]
+        for key in keys:
+            report = self.reshape_and_gather(report, key)
 
         if not is_master():
             return
 
         results = self.current_dataset.format_for_prediction(report)
+
         if hasattr(model, "format_for_prediction"):
             results = model.format_for_prediction(results, report)
         elif hasattr(model.module, "format_for_prediction"):
@@ -170,20 +161,13 @@ class TestReporter(Dataset):
         self.report = self.report + results
 
     def reshape_and_gather(self, report, key):
-
         if key in report:
             num_dims = report[key].dim()
             if num_dims == 1:
                 report[key] = gather_tensor(report[key]).view(-1)
-
-            elif num_dims == 2:
-                _, enc_size = report[key].size()
-                report[key] = gather_tensor(report[key]).view(-1, enc_size)
-
-            else:
-                raise RuntimeError(
-                    "Expect 1 or 2 dimensions for {} in report for 'reshape and gather'"
-                    " in 'TestReporter', but got {} instead.".format(key, num_dims)
-                )
+            elif num_dims >= 2:
+                # Collect dims other than batch
+                other_dims = report[key].size()[1:]
+                report[key] = gather_tensor(report[key]).view(-1, *other_dims)
 
         return report

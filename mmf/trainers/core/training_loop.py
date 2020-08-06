@@ -1,7 +1,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 
 import gc
+import logging
 import math
+import warnings
 from abc import ABC
 from typing import Any, Dict
 
@@ -12,6 +14,8 @@ from mmf.common.registry import registry
 from mmf.common.report import Report
 from mmf.utils.general import clip_gradients
 
+logger = logging.getLogger(__name__)
+
 
 class TrainerTrainingLoopMixin(ABC):
     current_epoch: int = 0
@@ -19,22 +23,16 @@ class TrainerTrainingLoopMixin(ABC):
     num_updates: int = 0
 
     def training_loop(self) -> None:
-        self.max_updates = self.training_config.max_updates
-        self.max_epochs = self.training_config.max_epochs
-        if self.max_epochs is None:
-            self.max_epochs = math.inf
-        else:
-            self.max_updates = math.inf
-
+        self.max_updates = self._calculate_max_updates()
         torch.autograd.set_detect_anomaly(self.training_config.detect_anomaly)
 
-        self.writer.write("Starting training...")
+        logger.info("Starting training...")
         self.model.train()
         self.run_training_epoch()
         self.after_training_loop()
 
     def after_training_loop(self) -> None:
-        self.writer.write("Stepping into final validation check")
+        logger.info("Stepping into final validation check")
         # Only do when run_type has train as it shouldn't happen on validation and
         # inference runs. Inference will take care of this anyways. Also, don't run
         # if current iteration is divisble by snapshot interval as it will just
@@ -58,13 +56,10 @@ class TrainerTrainingLoopMixin(ABC):
             # Seed the sampler in case if it is distributed
             self.dataset_loader.seed_sampler("train", self.current_epoch)
 
-            if self.current_epoch > self.max_epochs:
-                break
-
             for batch in self.train_loader:
                 self.profile("Batch load time")
                 self.current_iteration += 1
-                self.writer.write(self.num_updates + 1, "debug")
+                logger.debug(self.num_updates + 1)
 
                 self.run_training_batch(batch)
 
@@ -75,9 +70,7 @@ class TrainerTrainingLoopMixin(ABC):
                     # Validation begin callbacks
                     self.on_validation_start()
 
-                    self.writer.write(
-                        "Evaluation time. Running on full validation set..."
-                    )
+                    logger.info("Evaluation time. Running on full validation set...")
                     # Validation and Early stopping
                     # Create a new meter for this case
                     report, meter = self.evaluation_loop(self.val_loader)
@@ -94,9 +87,9 @@ class TrainerTrainingLoopMixin(ABC):
                         torch.cuda.empty_cache()
 
                     if stop is True:
-                        self.writer.write("Early stopping activated")
+                        logger.info("Early stopping activated")
                         should_break = True
-                if self.num_updates > self.max_updates:
+                if self.num_updates >= self.max_updates:
                     should_break = True
 
                 if should_break:
@@ -151,3 +144,19 @@ class TrainerTrainingLoopMixin(ABC):
         loss_dict = report.losses
         loss = sum([loss.mean() for loss in loss_dict.values()])
         return loss
+
+    def _calculate_max_updates(self):
+        max_updates = self.training_config.max_updates
+        max_epochs = self.training_config.max_epochs
+        if max_updates is None and max_epochs is None:
+            raise Exception("Neither max_updates nor max_epochs is specified.")
+
+        if max_updates is not None and max_epochs is not None:
+            warnings.warn(
+                f"Both max_updates and max_epochs are specified. Favoring max_epochs: {max_epochs}"
+            )
+
+        if max_epochs is not None:
+            max_updates = len(self.train_loader) * max_epochs
+
+        return max_updates

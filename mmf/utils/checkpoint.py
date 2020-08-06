@@ -2,9 +2,12 @@
 
 import glob
 import importlib
+import logging
 import os
 import sys
 import warnings
+import json
+import copy
 
 import torch
 from omegaconf import OmegaConf
@@ -20,6 +23,8 @@ try:
     import git
 except ImportError:
     git = None
+
+logger = logging.getLogger(__name__)
 
 
 def _hack_imports():
@@ -172,7 +177,7 @@ class Checkpoint:
 
     def _load(self, file, force=False, load_zoo=False, load_pretrained=False):
         ckpt_config = self.config.checkpoint
-        self.trainer.writer.write("Loading checkpoint")
+        logger.info("Loading checkpoint")
         if load_zoo:
             ckpt, should_continue = self._load_from_zoo(file)
             if not should_continue:
@@ -206,7 +211,7 @@ class Checkpoint:
 
             self.trainer.early_stop_callback.early_stopping.init_from_checkpoint(ckpt)
 
-            self.trainer.writer.write("Checkpoint loaded")
+            logger.info("Checkpoint loaded")
 
             reset_counts = ckpt_config.reset.all or ckpt_config.reset.counts
 
@@ -220,7 +225,7 @@ class Checkpoint:
             try:
                 self.trainer.optimizer.load_state_dict(ckpt["optimizer"])
             except ValueError:
-                self.trainer.writer.write(
+                logger.info(
                     "Optimizer failed to load. Try with "
                     + "checkpoint.reset.optimizer=True"
                 )
@@ -274,10 +279,32 @@ class Checkpoint:
         model = self.trainer.model
         own_state = model.state_dict()
         mapping = self.trainer.config.checkpoint.pretrained_state_mapping
+
+        if "classifier.1" in mapping:
+            # Load answers weights
+            with PathManager.open(self.trainer.config.checkpoint.qa_table, "r") as f:
+               qa_map = json.load(f)
+            
+            new_weight = torch.zeros_like(own_state["model.classifier.1.weight"])
+            new_bias = torch.zeros_like(own_state["model.classifier.1.bias"])
+            load_weight = copy.deepcopy(ckpt["model.classifier.1.weight"])
+            load_bias = copy.deepcopy(ckpt["model.classifier.1.bias"])
+            
+            for idx, load_idx in qa_map.items():
+                new_weight[int(idx)] = load_weight[load_idx]
+                new_bias[int(idx)] = load_bias[load_idx]
+
+            own_state["model.classifier.1.weight"].copy_(new_weight)
+            own_state["model.classifier.1.bias"].copy_(new_bias)
+            self.trainer.writer.write(f"Loaded {len(qa_map)} answers to classifier")
+
         for key, value in mapping.items():
             key += "."
             value += "."
             for attr in ckpt:
+                if "classifier.1" in attr:
+                    continue
+                
                 for own_attr in own_state:
                     if hasattr(model, "format_state_key"):
                         formatted_attr = model.format_state_key(attr)
@@ -289,11 +316,9 @@ class Checkpoint:
                         and own_attr.replace(key, "")
                         == formatted_attr.replace(value, "")
                     ):
-                        self.trainer.writer.write(
-                            "Copying " + own_attr + " from " + attr
-                        )
+                        logger.info("Copying " + own_attr + " from " + attr)
                         own_state[own_attr].copy_(ckpt[attr])
-        self.trainer.writer.write("Pretrained model loaded")
+        logger.info("Pretrained model loaded")
 
     def upgrade_state_dict(self, state_dict):
         data_parallel = registry.get("data_parallel") or registry.get("distributed")
@@ -432,7 +457,7 @@ class Checkpoint:
 
     def restore(self):
         synchronize()
-        self.trainer.writer.write("Restoring checkpoint")
+        logger.info("Restoring checkpoint")
         best_path = os.path.join(self.ckpt_foldername, self.ckpt_prefix + "best.ckpt")
 
         if PathManager.exists(best_path):
