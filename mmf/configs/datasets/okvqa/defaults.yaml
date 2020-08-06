@@ -1,9 +1,12 @@
 dataset_config:
   okvqa:
     data_dir: ${env.data_dir}/datasets
-    use_images: true
-    use_features: false
+    depth_first: false
+    fast_read: false
+    use_images: false
+    use_features: true
     zoo_requirements:
+    - coco.defaults
     - okvqa.defaults
     images:
       train:
@@ -12,13 +15,21 @@ dataset_config:
       - okvqa/defaults/images/
       test:
       - okvqa/defaults/images/
+    features:
+      train:
+      - coco/defaults/features/trainval2014.lmdb
+      val:
+      - coco/defaults/features/trainval2014.lmdb
+      test:
+      - coco/defaults/features/trainval2014.lmdb
     annotations:
       train:
-      - okvqa/defaults/annotations/mscoco_train2014_annotations.json,okvqa/defaults/annotations/OpenEnded_mscoco_train2014_questions.json
+      - okvqa/defaults/annotations/imdb_train2014.npy
       val:
-      - okvqa/defaults/annotations/mscoco_val2014_annotations.json,okvqa/defaults/annotations/OpenEnded_mscoco_val2014_questions.json
+      - okvqa/defaults/annotations/imdb_val2014.npy
       test:
-      - okvqa/defaults/annotations/mscoco_val2014_annotations.json,okvqa/defaults/annotations/OpenEnded_mscoco_val2014_questions.json
+      - okvqa/defaults/annotations/imdb_val2014.npy
+    max_features: 100
     processors:
       text_processor:
         type: vocab
@@ -39,19 +50,14 @@ dataset_config:
           preprocessor:
             type: simple_word
             params: {}
-      image_processor:
-        type: torchvision_transforms
-        params:
-          transforms:
-            - type: Resize
-              params:
-                size: [256, 256]
-            - type: CenterCrop
-              params:
-                size: [224, 224]
-            - ToTensor
-            - GrayScaleTo3Channels
-            - type: Normalize
-              params:
-                mean: [0.485, 0.456, 0.406]
-                std: [0.12221994, 0.12145835, 0.14380469]
+      context_processor:
+          type: fasttext
+          params:
+            download_initially: false
+            max_length: 50
+            model_file: wiki.en.bin
+      bbox_processor:
+          type: bbox
+          params:
+            max_length: 50
+    return_features_info: false #TODO: check what it is

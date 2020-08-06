@@ -260,6 +260,8 @@ checkpoint:
     # for loading `text_embedding` module of your model from `text_embedding_pythia`of
     # pretrained file specified in `checkpoint.resume_file`.
     pretrained_state_mapping: {}
+    # Path to qa table - to load pretrained answer weights
+    qa_table: ""
 
     # Will save only the last max_to_keep; if -1, saves all eligible checkpoints
     max_to_keep: -1

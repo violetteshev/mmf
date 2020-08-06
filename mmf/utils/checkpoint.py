@@ -6,6 +6,8 @@ import logging
 import os
 import sys
 import warnings
+import json
+import copy
 
 import torch
 from omegaconf import OmegaConf
@@ -277,10 +279,32 @@ class Checkpoint:
         model = self.trainer.model
         own_state = model.state_dict()
         mapping = self.trainer.config.checkpoint.pretrained_state_mapping
+
+        if "classifier.1" in mapping:
+            # Load answers weights
+            with PathManager.open(self.trainer.config.checkpoint.qa_table, "r") as f:
+               qa_map = json.load(f)
+            
+            new_weight = torch.zeros_like(own_state["model.classifier.1.weight"])
+            new_bias = torch.zeros_like(own_state["model.classifier.1.bias"])
+            load_weight = copy.deepcopy(ckpt["model.classifier.1.weight"])
+            load_bias = copy.deepcopy(ckpt["model.classifier.1.bias"])
+            
+            for idx, load_idx in qa_map.items():
+                new_weight[int(idx)] = load_weight[load_idx]
+                new_bias[int(idx)] = load_bias[load_idx]
+
+            own_state["model.classifier.1.weight"].copy_(new_weight)
+            own_state["model.classifier.1.bias"].copy_(new_bias)
+            self.trainer.writer.write(f"Loaded {len(qa_map)} answers to classifier")
+
         for key, value in mapping.items():
             key += "."
             value += "."
             for attr in ckpt:
+                if "classifier.1" in attr:
+                    continue
+                
                 for own_attr in own_state:
                     if hasattr(model, "format_state_key"):
                         formatted_attr = model.format_state_key(attr)
