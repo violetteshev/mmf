@@ -1,0 +1,10 @@
+includes:
+- ./defaults.yaml
+
+checkpoint:
+  resume_pretrained: true
+  resume_zoo: visual_bert.finetuned.vqa2.from_coco_train_val
+  qa_table: ${dataset_config.okvqa.data_dir}/okvqa/defaults/extras/vocabs/vqa22okvqa.json
+  pretrained_state_mapping:
+    classifier: classifier
+    classifier.1: classifier.1
