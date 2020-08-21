@@ -78,7 +78,6 @@ from typing import Any, Dict
 
 import numpy as np
 import torch
-
 from mmf.common.registry import registry
 from mmf.common.typings import ProcessorConfigType
 from mmf.utils.configuration import get_mmf_cache_dir, get_mmf_env
@@ -86,6 +85,7 @@ from mmf.utils.distributed import is_master, synchronize
 from mmf.utils.file_io import PathManager
 from mmf.utils.text import VocabDict
 from mmf.utils.vocab import Vocab, WordToVectorDict
+
 
 logger = logging.getLogger(__name__)
 
@@ -374,9 +374,17 @@ class GloVeProcessor(VocabProcessor):
 
             vocab_processor_config.vocab.type = "pretrained"
 
-        super().__init__(vocab_processor_config, *args, **kwargs)
+        self._init_extras(vocab_processor_config)
+        self.config = vocab_processor_config
+        self._already_downloaded = False
+        self._args = args
+        self._kwargs = kwargs
 
     def __call__(self, item):
+        if not self._already_downloaded:
+            self.vocab = Vocab(*self._args, **self.config.vocab, **self._kwargs)
+            self._already_downloaded = True
+
         indices = super().__call__(item)["text"]
         embeddings = torch.zeros(
             (len(indices), self.vocab.get_embedding_dim()), dtype=torch.float

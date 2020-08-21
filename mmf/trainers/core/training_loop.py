@@ -2,17 +2,17 @@
 
 import gc
 import logging
-import math
 import warnings
 from abc import ABC
 from typing import Any, Dict
 
 import torch
-from torch import Tensor
-
 from mmf.common.registry import registry
 from mmf.common.report import Report
+from mmf.common.sample import to_device
 from mmf.utils.general import clip_gradients
+from torch import Tensor
+
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,8 @@ class TrainerTrainingLoopMixin(ABC):
 
     def _forward(self, batch: Tensor) -> Dict[str, Any]:
         prepared_batch = self.dataset_loader.prepare_batch(batch)
+        # Move the sample list to device if it isn't as of now.
+        prepared_batch = to_device(prepared_batch, torch.device("cuda"))
         self.profile("Batch prepare time")
         # Arguments should be a dict at this point
         model_output = self.model(prepared_batch)
@@ -149,11 +151,12 @@ class TrainerTrainingLoopMixin(ABC):
         max_updates = self.training_config.max_updates
         max_epochs = self.training_config.max_epochs
         if max_updates is None and max_epochs is None:
-            raise Exception("Neither max_updates nor max_epochs is specified.")
+            raise ValueError("Neither max_updates nor max_epochs is specified.")
 
         if max_updates is not None and max_epochs is not None:
             warnings.warn(
-                f"Both max_updates and max_epochs are specified. Favoring max_epochs: {max_epochs}"
+                "Both max_updates and max_epochs are specified. "
+                + f"Favoring max_epochs: {max_epochs}"
             )
 
         if max_epochs is not None:

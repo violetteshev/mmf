@@ -4,11 +4,11 @@ import unittest
 from unittest.mock import MagicMock
 
 import torch
-from omegaconf import OmegaConf
-
 from mmf.common.sample import SampleList
 from mmf.trainers.core.profiling import TrainerProfilingMixin
 from mmf.trainers.core.training_loop import TrainerTrainingLoopMixin
+from omegaconf import OmegaConf
+
 from tests.test_utils import NumbersDataset, SimpleModel
 
 
@@ -23,6 +23,9 @@ class TrainerTrainingLoopMock(TrainerTrainingLoopMixin, TrainerProfilingMixin):
             self.training_config["max_epochs"] = max_epochs
 
         self.model = SimpleModel(1)
+        if torch.cuda.is_available():
+            self.model = self.model.cuda()
+
         self.dataset_loader = MagicMock()
         self.dataset_loader.seed_sampler = MagicMock(return_value=None)
         self.dataset_loader.prepare_batch = lambda x: SampleList(x)
@@ -31,11 +34,7 @@ class TrainerTrainingLoopMock(TrainerTrainingLoopMixin, TrainerProfilingMixin):
         self.optimizer.zero_grad = MagicMock(return_value=None)
         dataset = NumbersDataset(num_train_data)
         self.train_loader = torch.utils.data.DataLoader(
-            dataset=dataset,
-            batch_size=1,
-            shuffle=False,
-            num_workers=1,
-            drop_last=False,
+            dataset=dataset, batch_size=1, shuffle=False, num_workers=1, drop_last=False
         )
         self.on_batch_start = MagicMock(return_value=None)
         self.logistics_callback = MagicMock(return_value=None)

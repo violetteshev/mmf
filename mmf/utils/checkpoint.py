@@ -10,14 +10,14 @@ import json
 import copy
 
 import torch
-from omegaconf import OmegaConf
-
 from mmf.common.registry import registry
 from mmf.utils.configuration import get_mmf_env, load_yaml
 from mmf.utils.distributed import is_master, synchronize
 from mmf.utils.download import download_pretrained_model
 from mmf.utils.file_io import PathManager
 from mmf.utils.general import updir
+from omegaconf import OmegaConf
+
 
 try:
     import git
@@ -210,15 +210,17 @@ class Checkpoint:
                 self._load_optimizer(ckpt)
 
             self.trainer.early_stop_callback.early_stopping.init_from_checkpoint(ckpt)
-
-            logger.info("Checkpoint loaded")
-
             reset_counts = ckpt_config.reset.all or ckpt_config.reset.counts
 
             if not reset_counts:
                 self._load_counts(ckpt)
         else:
             self._load_pretrained(new_dict)
+
+        logger.info("Checkpoint loaded.")
+        logger.info(f"Current num updates: {self.trainer.num_updates}")
+        logger.info(f"Current iteration: {self.trainer.current_iteration}")
+        logger.info(f"Current epoch: {self.trainer.current_epoch}")
 
     def _load_optimizer(self, ckpt):
         if "optimizer" in ckpt:
