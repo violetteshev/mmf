@@ -42,6 +42,7 @@ def filter_answers(answers_dset, min_occurence):
         else:
             for ans in ans_entry["answers"]:
                 gtruth = ans["answer"]
+                #gtruth = ans["raw_answer"]
                 gtruth = evalai_answer_processor(gtruth)
                 if gtruth not in occurence:
                     occurence[gtruth] = set()
