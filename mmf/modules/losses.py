@@ -559,3 +559,35 @@ class CrossEntropyLoss(nn.Module):
 
     def forward(self, sample_list, model_output):
         return self.loss_fn(model_output["scores"], sample_list.targets)
+
+
+@registry.register_loss("knwlg_reg")
+class KnowledgeRegularizer(nn.Module):
+    """Returns Knolwedge L2 regularizer to entities.
+
+    Attention:
+        `Key`: knwlg_reg
+    """
+
+    def __init__(self, loss_type="mse"):
+        super().__init__()
+        if loss_type == "smooth":
+            self.loss_fn = nn.SmoothL1Loss(reduction="none")
+        else:
+            self.loss_fn = nn.MSELoss(reduction="none")
+
+    def forward(self, sample_list, model_output):
+        """
+        Args:
+            sample_list (SampleList): SampleList containing `txt_entities` attribute.
+            model_output (Dict): Model output containing `entities` attribute.
+
+        Returns:
+            torch.FloatTensor: Float value for loss.
+
+        """
+        entities = model_output["txt_entities"]
+        gt_entities = sample_list["entities"]
+        loss = self.loss_fn(entities, gt_entities)
+
+        return loss
