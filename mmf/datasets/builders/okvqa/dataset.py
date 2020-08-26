@@ -1,21 +1,18 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-from typing import Type, Union
+import logging
 
 import torch
+import tqdm
 from mmf.common.sample import Sample
-from mmf.common.typings import MMFDatasetConfigType
 from mmf.datasets.mmf_dataset import MMFDataset
+from mmf.utils.distributed import is_master
+
+
+logger = logging.getLogger(__name__)
 
 
 class OKVQADataset(MMFDataset):
-    def __init__(
-        self,
-        config: MMFDatasetConfigType,
-        dataset_type: str,
-        index: int,
-        *args,
-        **kwargs,
-    ):
+    def __init__(self, config, dataset_type, imdb_file_index, *args, **kwargs):
         if "name" in kwargs:
             name = kwargs["name"]
         elif "dataset_name" in kwargs:
@@ -25,21 +22,26 @@ class OKVQADataset(MMFDataset):
         super().__init__(name, config, dataset_type, index, *args, **kwargs)
         self._should_fast_read = self.config.get("fast_read", False)
 
+    def init_processors(self):
+        super().init_processors()
+        if not self._use_features:
+            self.image_db.transform = self.image_processor
+    
     def try_fast_read(self):
         # Don't fast read in case of test set.
         if self._dataset_type == "test":
             return
 
         if hasattr(self, "_should_fast_read") and self._should_fast_read is True:
-            self.writer.write(
-                "Starting to fast read {} {} dataset".format(
-                    self.dataset_name, self.dataset_type
-                )
+            logger.info(
+                f"Starting to fast read {self.dataset_name} {self.dataset_type} "
+                + "dataset"
             )
             self.cache = {}
-            for idx in range(len(self.annotation_db)):
+            for idx in tqdm.tqdm(
+                range(len(self.annotation_db)), miniters=100, disable=not is_master()
+            ):
                 self.cache[idx] = self.load_item(idx)
-            self.writer.write("Finish fast read")
 
     def __getitem__(self, idx):
         if self._should_fast_read is True and self._dataset_type != "test":
@@ -47,7 +49,7 @@ class OKVQADataset(MMFDataset):
         else:
             return self.load_item(idx)
     
-    def load_item(self, idx: int) -> Type[Sample]:
+    def load_item(self, idx):
         sample_info = self.annotation_db[idx]
         current_sample = Sample()
 
@@ -80,20 +82,33 @@ class OKVQADataset(MMFDataset):
             len(sample_info["question_tokens"]), dtype=torch.int
         )
 
-        if self._use_features is True:
+        if self._use_features:
             features = self.features_db[idx]
             if hasattr(self, "transformer_bbox_processor"):
                 features["image_info_0"] = self.transformer_bbox_processor(
                     features["image_info_0"]
                 )
             current_sample.update(features)
+        else:
+            image_path = sample_info["image_name"] + ".jpg"
+            current_sample.image = self.image_db.from_path(image_path)["images"][0]
 
-        if "answers" in sample_info:
-            answers = self.answer_processor({"answers": sample_info["answers"]})
-            current_sample.targets = answers["answers_scores"]
+        # Depending on whether we are using soft copy this can add
+        # dynamic answer space
+        current_sample = self.add_answer_info(sample_info, current_sample)
 
         return current_sample
 
+    def add_answer_info(self, sample_info, sample):
+        if "answers" in sample_info:
+            answers = sample_info["answers"]
+            answer_processor_arg = {"answers": answers}
+
+            processed_soft_copy_answers = self.answer_processor(answer_processor_arg)
+            sample.targets = processed_soft_copy_answers["answers_scores"]
+
+        return sample
+    
     def idx_to_answer(self, idx):
         return self.answer_processor.convert_idx_to_answer(idx)
 
