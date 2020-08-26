@@ -16,9 +16,9 @@ class OKVQABuilder(MMFDatasetBuilder):
     def config_path(cls):
         return "configs/datasets/okvqa/defaults.yaml"
 
-    #def load(self, *args, **kwargs):
-    #    dataset = super().load(*args, **kwargs)
-    #    if dataset is not None and hasattr(dataset, "try_fast_read"):
-    #        dataset.try_fast_read()
-    #
-    #    return dataset
+    def load(self, *args, **kwargs):
+       dataset = super().load(*args, **kwargs)
+       if dataset is not None and hasattr(dataset, "try_fast_read"):
+           dataset.try_fast_read()
+    
+       return dataset

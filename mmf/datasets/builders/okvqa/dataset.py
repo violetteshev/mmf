@@ -32,7 +32,7 @@ class OKVQADataset(MMFDataset):
         if self._dataset_type == "test":
             return
 
-        if hasattr(self, "_should_fast_read") and self._should_fast_read is True:
+        if hasattr(self, "_should_fast_read") and self._should_fast_read:
             logger.info(
                 f"Starting to fast read {self.dataset_name} {self.dataset_type} "
                 + "dataset"
@@ -44,7 +44,7 @@ class OKVQADataset(MMFDataset):
                 self.cache[idx] = self.load_item(idx)
 
     def __getitem__(self, idx):
-        if self._should_fast_read is True and self._dataset_type != "test":
+        if self._should_fast_read and self._dataset_type != "test":
             return self.cache[idx]
         else:
             return self.load_item(idx)

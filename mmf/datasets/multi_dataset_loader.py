@@ -121,6 +121,7 @@ class MultiDatasetLoader:
         for dataset in self._given_datasets:
             if dataset in self.config.dataset_config:
                 dataset_config = self.config.dataset_config[dataset]
+                dataset_config.fast_read = self.config.training.fast_read
             else:
                 raise RuntimeError(
                     f"Dataset {dataset} is missing from " "dataset_config in config."
