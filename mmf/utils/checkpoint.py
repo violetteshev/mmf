@@ -298,7 +298,7 @@ class Checkpoint:
 
             own_state["model.classifier.1.weight"].copy_(new_weight)
             own_state["model.classifier.1.bias"].copy_(new_bias)
-            self.trainer.writer.write(f"Loaded {len(qa_map)} answers to classifier")
+            logger.info(f"Loaded {len(qa_map)} answers to classifier")
 
         for key, value in mapping.items():
             key += "."
