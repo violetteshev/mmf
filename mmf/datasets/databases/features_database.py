@@ -49,8 +49,8 @@ class FeaturesDatabase(ImageDatabase):
 
         with tqdm.tqdm(total=len(elements), disable=not is_master()) as pbar:
             for i, _ in enumerate(pool.imap_unordered(self._fill_cache, elements)):
-                if i % 100 == 0:
-                    pbar.update(100)
+                if i % 1000 == 0:
+                    pbar.update(1000)
         pool.close()
 
     def _fill_cache(self, idx):
