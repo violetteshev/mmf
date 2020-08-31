@@ -94,11 +94,34 @@ class OKVQADataset(MMFDataset):
             image_path = sample_info["image_name"] + ".jpg"
             current_sample.image = self.image_db.from_path(image_path)["images"][0]
 
+        # Add details for knowledge entities
+        current_sample = self.add_entity_details(sample_info, current_sample)
         # Depending on whether we are using soft copy this can add
         # dynamic answer space
         current_sample = self.add_answer_info(sample_info, current_sample)
 
         return current_sample
+
+    def add_entity_details(self, sample_info, sample):
+        if self._use_ontology:
+            # Pad with -1 
+            entity_ids = sample_info["entity_ids"]
+            tokens = sample_info["entity_tokens"]
+
+            while len(entity_ids) < len(sample.input_ids):
+                entity_ids.append([-1] * self.max_entity_len)
+                tokens.append("<unk>")
+
+            sample.entity_ids = torch.tensor(
+                entity_ids, dtype=torch.int
+            )
+
+            # Get entity embeddings
+            sample.entity_embeds = torch.tensor(
+                [self.ontology[token] for token in tokens], dtype=torch.float
+            )
+
+        return sample
 
     def add_answer_info(self, sample_info, sample):
         if "answers" in sample_info:

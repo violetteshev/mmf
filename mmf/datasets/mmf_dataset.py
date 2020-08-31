@@ -1,6 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import collections
 import os
+import pickle
 
 from mmf.datasets.base_dataset import BaseDataset
 from mmf.datasets.databases.annotation_database import AnnotationDatabase
@@ -31,6 +32,11 @@ class MMFDataset(BaseDataset):
         self._use_features = self.config.get("use_features", False)
         if self._use_features:
             self.features_db = self.build_features_db()
+        
+        self._use_ontology = self.config.get("use_ontology", False)
+        if self._use_ontology:
+            self.ontology = self.build_ontology()
+            self.max_entity_len = self.config.get("max_entity_len", 3)
 
     def build_annotation_db(self):
         annotation_path = self._get_path_based_on_index(
@@ -49,6 +55,14 @@ class MMFDataset(BaseDataset):
     def build_image_db(self):
         image_path = self._get_path_based_on_index(self.config, "images", self._index)
         return ImageDatabase(self.config, image_path, annotation_db=self.annotation_db)
+
+    def build_ontology(self):
+        ontology_path = self._get_path_based_on_index(
+            self.config, "ontology", self._index
+        )
+        with open(ontology_path, 'rb') as f:
+            ontology = pickle.load(f)
+        return ontology
 
     def _get_path_based_on_index(self, config, attribute, index):
         if attribute not in config:
