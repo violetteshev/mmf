@@ -121,6 +121,7 @@ class MultiDatasetLoader:
         for dataset in self._given_datasets:
             if dataset in self.config.dataset_config:
                 dataset_config = self.config.dataset_config[dataset]
+                dataset_config.fast_read = self.config.training.fast_read
             else:
                 raise RuntimeError(
                     f"Dataset {dataset} is missing from " "dataset_config in config."
@@ -183,7 +184,10 @@ class MultiDatasetLoader:
 
     def __len__(self):
         # Since, this is iterator, we need to return total length == number of batches
-        return self._total_length // get_batch_size()
+        batch_size = get_batch_size()
+        # This assumes drop_last=False for all loaders. See also
+        # build_dataloader_and_sampler().
+        return (self._total_length + batch_size - 1) // batch_size
 
     def __iter__(self):
         if self._num_datasets == 1:

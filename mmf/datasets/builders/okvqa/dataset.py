@@ -19,7 +19,7 @@ class OKVQADataset(MMFDataset):
             name = kwargs["dataset_name"]
         else:
             name = "okvqa"
-        super().__init__(name, config, dataset_type, index, *args, **kwargs)
+        super().__init__(name, config, dataset_type, index=imdb_file_index)
         self._should_fast_read = self.config.get("fast_read", False)
 
     def init_processors(self):
@@ -32,19 +32,20 @@ class OKVQADataset(MMFDataset):
         if self._dataset_type == "test":
             return
 
-        if hasattr(self, "_should_fast_read") and self._should_fast_read is True:
+        if hasattr(self, "_should_fast_read") and self._should_fast_read:
             logger.info(
                 f"Starting to fast read {self.dataset_name} {self.dataset_type} "
                 + "dataset"
             )
             self.cache = {}
-            for idx in tqdm.tqdm(
-                range(len(self.annotation_db)), miniters=100, disable=not is_master()
-            ):
+            # for idx in tqdm.tqdm(
+            #     range(len(self.annotation_db)), miniters=100, disable=not is_master()
+            # ):
+            for idx in range(len(self.annotation_db)):
                 self.cache[idx] = self.load_item(idx)
 
     def __getitem__(self, idx):
-        if self._should_fast_read is True and self._dataset_type != "test":
+        if self._should_fast_read and self._dataset_type != "test":
             return self.cache[idx]
         else:
             return self.load_item(idx)
