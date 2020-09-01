@@ -8,7 +8,7 @@ from copy import deepcopy
 import torch
 from mmf.common.registry import registry
 from mmf.models import BaseModel
-from mmf.modules.embeddings import BertVisioLinguisticEmbeddings
+from mmf.modules.embeddings import BertVisioLinguisticKnwlgEmbeddings
 from mmf.utils.configuration import get_mmf_cache_dir
 from mmf.utils.modeling import get_optimizer_parameters_for_bert
 from mmf.utils.transform import (
@@ -47,7 +47,7 @@ class VisualBERTBase(BertPreTrainedModel):
         config.output_attentions = output_attentions
         config.output_hidden_states = output_hidden_states
 
-        self.embeddings = BertVisioLinguisticEmbeddings(config)
+        self.embeddings = BertVisioLinguisticKnwlgEmbeddings(config)
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
         self.bypass_transformer = config.bypass_transformer
@@ -69,6 +69,7 @@ class VisualBERTBase(BertPreTrainedModel):
         position_embeddings_visual=None,
         visual_embeddings_type=None,
         image_text_alignment=None,
+        entity_ids=None,
     ):
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -93,13 +94,14 @@ class VisualBERTBase(BertPreTrainedModel):
         )  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
-        embedding_output = self.embeddings(
+        embedding_output, entities = self.embeddings(
             input_ids,
             token_type_ids,
             visual_embeddings=visual_embeddings,
             position_embeddings_visual=position_embeddings_visual,
             visual_embeddings_type=visual_embeddings_type,
             image_text_alignment=image_text_alignment,
+            entity_ids=entity_ids,
         )
 
         if self.bypass_transformer and visual_embeddings is not None:
@@ -125,7 +127,7 @@ class VisualBERTBase(BertPreTrainedModel):
                 new_input, extended_attention_mask
             )
             pooled_output = self.pooler(final_sequence_output)
-            return final_sequence_output, pooled_output
+            return final_sequence_output, pooled_output, None, entities
 
         else:
             encoded_layers = self.encoder(
@@ -138,7 +140,7 @@ class VisualBERTBase(BertPreTrainedModel):
             if self.output_attentions:
                 attn_data_list = encoded_layers[1:]
 
-            return sequence_output, pooled_output, attn_data_list
+            return sequence_output, pooled_output, attn_data_list, entities
 
 
 class VisualBERTForPretraining(nn.Module):
@@ -147,6 +149,7 @@ class VisualBERTForPretraining(nn.Module):
         self.config = config
         self.output_attentions = self.config.output_attentions
         self.output_hidden_states = self.config.output_hidden_states
+        self.use_knwlg = self.config.get("use_knwlg", False)
 
         # If bert_model_name is not specified, you will need to specify
         # all of the required parameters for BERTConfig and a pretrained
@@ -227,8 +230,9 @@ class VisualBERTForPretraining(nn.Module):
         visual_embeddings_type=None,
         image_text_alignment=None,
         masked_lm_labels=None,
+        entity_ids=None,
     ):
-        sequence_output, pooled_output, attention_weights = self.bert(
+        sequence_output, pooled_output, attention_weights, entities = self.bert(
             input_ids,
             attention_mask,
             token_type_ids,
@@ -236,6 +240,7 @@ class VisualBERTForPretraining(nn.Module):
             position_embeddings_visual,
             visual_embeddings_type,
             image_text_alignment,
+            entity_ids=entity_ids,
         )
 
         output_dict = {}
@@ -246,6 +251,9 @@ class VisualBERTForPretraining(nn.Module):
         if self.output_hidden_states:
             output_dict["sequence_output"] = sequence_output
             output_dict["pooled_output"] = pooled_output
+
+        if self.use_knwlg:
+            output_dict["entities"] = entities
 
         prediction_scores, seq_relationship_score = self.cls(
             sequence_output, pooled_output
@@ -269,6 +277,7 @@ class VisualBERTForClassification(nn.Module):
         self.output_attentions = self.config.output_attentions
         self.output_hidden_states = self.config.output_hidden_states
         self.pooler_strategy = self.config.get("pooler_strategy", "default")
+        self.use_knwlg = self.config.get("use_knwlg", False)
 
         # If bert_model_name is not specified, you will need to specify
         # all of the required parameters for BERTConfig and a pretrained
@@ -332,8 +341,9 @@ class VisualBERTForClassification(nn.Module):
         visual_embeddings_type=None,
         image_text_alignment=None,
         masked_lm_labels=None,
+        entity_ids=None,
     ):
-        sequence_output, pooled_output, attention_weights = self.bert(
+        sequence_output, pooled_output, attention_weights, entities = self.bert(
             input_ids,
             attention_mask,
             token_type_ids,
@@ -341,6 +351,7 @@ class VisualBERTForClassification(nn.Module):
             position_embeddings_visual,
             visual_embeddings_type,
             image_text_alignment,
+            entity_ids=entity_ids,
         )
 
         if self.training_head_type == "nlvr2":
@@ -357,6 +368,9 @@ class VisualBERTForClassification(nn.Module):
         if self.output_hidden_states:
             output_dict["sequence_output"] = sequence_output
             output_dict["pooled_output"] = pooled_output
+
+        if self.use_knwlg:
+            output_dict["entities"] = entities
 
         if self.pooler_strategy == "vqa":
             # In VQA2 pooling strategy, we use representation from second last token
@@ -453,7 +467,7 @@ class VisualBERT(BaseModel):
             "position_embeddings_visual",
             "visual_embeddings_type",
         ]
-        to_be_flattened_dim = ["image_text_alignment", "visual_embeddings"]
+        to_be_flattened_dim = ["image_text_alignment", "visual_embeddings", "entity_ids"]
 
         # We want to convert everything into: batch x sequence_length x (dim).
         flattened = self.flatten(sample_list, to_be_flattened, to_be_flattened_dim)
@@ -464,10 +478,16 @@ class VisualBERT(BaseModel):
         bert_input_mask = sample_list.input_mask
         bert_input_type_ids = sample_list.segment_ids
 
+        if self.config.use_knwlg:
+            bert_entity_ids = sample_list.entity_ids
+
         if self.config.training_head_type == "nlvr2":
             bert_input_ids = torch.cat([bert_input_ids, bert_input_ids])
             bert_input_mask = torch.cat([bert_input_mask, bert_input_mask])
             bert_input_type_ids = torch.cat([bert_input_type_ids, bert_input_type_ids])
+
+            if self.config.use_knwlg:
+                bert_entity_ids = torch.cat([bert_entity_ids, bert_entity_ids])
 
             # image input
             img0 = getattr(sample_list, "img0", {})
@@ -494,6 +514,10 @@ class VisualBERT(BaseModel):
         sample_list.input_ids = bert_input_ids
         sample_list.input_mask = bert_input_mask
         sample_list.token_type_ids = bert_input_type_ids
+
+        if self.config.use_knwlg:
+            sample_list.entity_ids = bert_entity_ids
+
         return sample_list
 
     def add_custom_params(self, sample_list):
@@ -543,6 +567,7 @@ class VisualBERT(BaseModel):
             sample_list.visual_embeddings_type,
             sample_list.image_text_alignment,
             sample_list.masked_lm_labels,
+            entity_ids=sample_list.entity_ids,
         )
 
         if "pretraining" in self.config.training_head_type:

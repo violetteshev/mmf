@@ -5,6 +5,7 @@ dataset_config:
     fast_read: false
     use_images: false
     use_features: true
+    use_ontology: false
     zoo_requirements:
     - coco.defaults
     - okvqa.defaults
@@ -29,7 +30,15 @@ dataset_config:
       - okvqa/defaults/annotations/imdb_val2014.npy
       test:
       - okvqa/defaults/annotations/imdb_val2014.npy
+    ontology:
+      train:
+      - okvqa/defaults/ontology/numberbatch.pkl
+      val:
+      - okvqa/defaults/ontology/numberbatch.pkl
+      test:
+      - okvqa/defaults/ontology/numberbatch.pkl
     max_features: 100
+    max_entity_len: 10
     processors:
       text_processor:
         type: vocab
@@ -50,7 +59,7 @@ dataset_config:
           preprocessor:
             type: simple_word
             params: {}
-      context_processor:
+      context_processor: #TODO: check what it is
           type: fasttext
           params:
             download_initially: false

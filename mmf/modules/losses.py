@@ -399,7 +399,7 @@ class MultiLoss(nn.Module):
         loss = 0
         for idx, loss_fn in enumerate(self.losses):
             value = loss_fn(sample_list, model_output, *args, **kwargs)
-            loss += self.losses_weights[idx] * value
+            loss += self.losses_weights[idx] * list(value.values())[0]
         return loss
 
 
@@ -569,8 +569,10 @@ class KnowledgeRegularizer(nn.Module):
         `Key`: knwlg_reg
     """
 
-    def __init__(self, loss_type="mse"):
+    def __init__(self, loss_type="mse", weight=1):
         super().__init__()
+        self.weight = weight
+
         if loss_type == "smooth":
             self.loss_fn = nn.SmoothL1Loss(reduction="none")
         else:
@@ -586,8 +588,26 @@ class KnowledgeRegularizer(nn.Module):
             torch.FloatTensor: Float value for loss.
 
         """
-        entities = model_output["txt_entities"]
-        gt_entities = sample_list["entities"]
-        loss = self.loss_fn(entities, gt_entities)
+        entities = model_output["entities"]
+        gt_entities = sample_list["entity_embeds"]
+        entity_ids = sample_list["entity_ids"]
 
+        # Remove -1 padding
+        entity_ids_l = entity_ids.tolist()
+        filtered_ids = [[[x for x in l if x != -1] for l in batch] for batch in entity_ids_l]
+        entity_ids = [[l for l in batch if len(l) > 0] for batch in filtered_ids]
+
+        # Remove samples without entities 
+        lens = torch.tensor([len(e) for e in entity_ids], dtype=torch.float, device=entities.device) # number of detected entities
+        filter_lens_ids = (lens != 0).nonzero().squeeze()
+        filter_lens = lens[filter_lens_ids]
+        filter_enities = entities[filter_lens_ids, :, :]
+        filter_gt_entities = gt_entities[filter_lens_ids, :, :]
+
+        dist = self.loss_fn(filter_enities, filter_gt_entities)
+        
+        # Reduction
+        loss = (dist.sum(dim=(1,2)) / filter_lens).mean()
+        loss *= self.weight
+        
         return loss
