@@ -14,7 +14,7 @@ class MaskedVQA2Dataset(VQA2Dataset):
             *args,
             **kwargs
         )
-        self._add_answer = config.get("add_answer", True)
+        self._add_answer = config.get("add_answer", False) # TODO: why it was True ???
 
     def load_item(self, idx):
         sample_info = self.annotation_db[idx]
@@ -22,8 +22,7 @@ class MaskedVQA2Dataset(VQA2Dataset):
 
         if self._use_features:
             features = self.features_db[idx]
-
-            if self.config.get("transformer_bbox_processor", False):
+            if hasattr(self, "transformer_bbox_processor"):
                 features["image_info_0"] = self.transformer_bbox_processor(
                     features["image_info_0"]
                 )
