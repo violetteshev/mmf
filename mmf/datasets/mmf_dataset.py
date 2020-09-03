@@ -7,6 +7,7 @@ from mmf.datasets.base_dataset import BaseDataset
 from mmf.datasets.databases.annotation_database import AnnotationDatabase
 from mmf.datasets.databases.features_database import FeaturesDatabase
 from mmf.datasets.databases.image_database import ImageDatabase
+from mmf.datasets.databases.ontology_database import Ontology
 
 
 class MMFDataset(BaseDataset):
@@ -36,7 +37,6 @@ class MMFDataset(BaseDataset):
         self._use_ontology = self.config.get("use_ontology", False)
         if self._use_ontology:
             self.ontology = self.build_ontology()
-            self.max_entity_len = self.config.get("max_entity_len", 3)
 
     def build_annotation_db(self):
         annotation_path = self._get_path_based_on_index(
@@ -60,9 +60,7 @@ class MMFDataset(BaseDataset):
         ontology_path = self._get_path_based_on_index(
             self.config, "ontology", self._index
         )
-        with open(ontology_path, 'rb') as f:
-            ontology = pickle.load(f)
-        return ontology
+        return Ontology(ontology_path, self.config.max_entity_len)
 
     def _get_path_based_on_index(self, config, attribute, index):
         if attribute not in config:

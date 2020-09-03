@@ -3,6 +3,7 @@ import logging
 
 import torch
 import tqdm
+import numpy as np
 from mmf.common.sample import Sample
 from mmf.datasets.mmf_dataset import MMFDataset
 from mmf.utils.distributed import is_master
@@ -95,31 +96,29 @@ class OKVQADataset(MMFDataset):
             current_sample.image = self.image_db.from_path(image_path)["images"][0]
 
         # Add details for knowledge entities
-        current_sample = self.add_entity_details(sample_info, current_sample)
+        current_sample = self.add_entity_details(current_sample)
         # Depending on whether we are using soft copy this can add
         # dynamic answer space
         current_sample = self.add_answer_info(sample_info, current_sample)
 
         return current_sample
 
-    def add_entity_details(self, sample_info, sample):
+    def add_entity_details(self, sample):
         if self._use_ontology:
+            # Extract entities
+            entity_ids, entity_embeds, words = self.ontology.extract_entities(sample.text)
+            
             # Pad with -1 
-            entity_ids = sample_info["entity_ids"]
-            tokens = sample_info["entity_tokens"]
+            max_seq_len = len(sample.input_ids)
+            entity_ids = [ids + [-1] * (self.ontology.max_len - len(ids)) for ids in entity_ids]
 
-            while len(entity_ids) < len(sample.input_ids):
-                entity_ids.append([-1] * self.max_entity_len)
-                tokens.append("<unk>")
+            while len(entity_embeds) < max_seq_len:
+                entity_embeds.append(np.zeros(self.ontology.embed_dim))
+                entity_ids.append([-1] * self.ontology.max_len)
 
-            sample.entity_ids = torch.tensor(
-                entity_ids, dtype=torch.int
-            )
-
-            # Get entity embeddings
-            sample.entity_embeds = torch.tensor(
-                [self.ontology[token] for token in tokens], dtype=torch.float
-            )
+            # Convert to tensors
+            sample.entity_ids = torch.tensor(entity_ids, dtype=torch.int)
+            sample.entity_embeds = torch.tensor(entity_embeds, dtype=torch.float)
 
         return sample
 

@@ -24,7 +24,7 @@ model_config:
 dataset_config:
   okvqa:
     use_ontology: true
-    max_entity_len: 2
+    max_entity_len: 10
     return_features_info: true
     processors:
       text_processor:
