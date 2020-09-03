@@ -1,7 +1,11 @@
 dataset_config:
   vqa2_train_val:
+    data_dir: ${env.data_dir}/datasets
+    depth_first: false
+    fast_read: false
     use_images: false
     use_features: true
+    use_ontology: false
     zoo_requirements:
     - coco.defaults
     - vqa2.defaults
@@ -18,9 +22,14 @@ dataset_config:
       - vqa2/defaults/annotations/imdb_val2014.npy
       val:
       - vqa2/defaults/annotations/imdb_minival2014.npy
-    data_dir: ${env.data_dir}/datasets
-    depth_first: false
-    fast_read: false
+    ontology:
+      train:
+      - ontologies/numberbatch
+      val:
+      - ontologies/numberbatch
+      test:
+      - ontologies/numberbatch
+    max_entity_len: 10
     max_features: 100
     processors:
       text_processor:

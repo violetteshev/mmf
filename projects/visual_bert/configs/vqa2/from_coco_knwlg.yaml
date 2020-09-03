@@ -1,0 +1,6 @@
+includes:
+- ./defaults_knwlg.yaml
+
+checkpoint:
+  resume_pretrained: true
+  resume_zoo: visual_bert.pretrained.coco
