@@ -9,6 +9,7 @@ import torch
 from mmf.common.registry import registry
 from mmf.models import BaseModel
 from mmf.modules.embeddings import BertVisioLinguisticKnwlgEmbeddings
+from mmf.modules.losses import KnowledgeRegularizer
 from mmf.utils.configuration import get_mmf_cache_dir
 from mmf.utils.modeling import get_optimizer_parameters_for_bert
 from mmf.utils.transform import (
@@ -199,6 +200,7 @@ class VisualBERTForPretraining(nn.Module):
             )
         self.cls = deepcopy(bert_masked_lm.cls)
         self.loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
+
         self.init_weights()
 
     def init_weights(self):
@@ -403,6 +405,8 @@ class VisualBERT(BaseModel):
     def build(self):
         if self.config.training_head_type == "pretraining":
             self.model = VisualBERTForPretraining(self.config)
+            if self.config.use_knwlg:
+                self.knwlg_reg = KnowledgeRegularizer(weight=100) # TODO: change to config!
         else:
             self.model = VisualBERTForClassification(self.config)
 
@@ -578,5 +582,10 @@ class VisualBERT(BaseModel):
             output_dict["losses"][loss_key + "/masked_lm_loss"] = output_dict.pop(
                 "masked_lm_loss"
             )
+
+            if self.config.use_knwlg:
+                knwlg_loss = self.knwlg_reg(sample_list, output_dict)
+                output_dict["losses"][loss_key + "/knwlg_reg"] = knwlg_loss
+                output_dict["loss"] += knwlg_loss
 
         return output_dict

@@ -1,0 +1,35 @@
+model_config:
+  visual_bert:
+    use_knwlg: true
+    knwlg_size: 300
+    losses:
+    - type: logit_bce
+    - type: knwlg_reg
+      params: {"weight": 100}
+
+dataset_config:
+  masked_vqa2:
+    use_ontology: true
+    max_entity_len: 10
+    annotations:
+      train:
+      - vqa2/defaults/annotations/imdb_train2014.npy
+    return_features_info: true
+
+optimizer:
+  type: adam_w
+  params:
+    lr: 5e-5
+    eps: 1e-8
+
+scheduler:
+  type: warmup_linear
+  params:
+    num_warmup_steps: 1000
+    num_training_steps: ${training.max_updates}
+
+training:
+  batch_size: 480
+  lr_scheduler: true
+  # Don't forget to update schedule_attributes if you update this
+  max_updates: 11000

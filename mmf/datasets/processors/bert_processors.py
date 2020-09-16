@@ -133,6 +133,7 @@ class MaskedTokenProcessor(BaseProcessor):
             tokens_a, tokens_b, probability=self._probability
         )
         output["is_correct"] = torch.tensor(item["is_correct"], dtype=torch.long)
+        output["text"] = output["tokens"] # tokens are needed for knowledge extraction
 
         return output
 

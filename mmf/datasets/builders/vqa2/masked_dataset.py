@@ -14,7 +14,7 @@ class MaskedVQA2Dataset(VQA2Dataset):
             *args,
             **kwargs
         )
-        self._add_answer = config.get("add_answer", False) # TODO: why it was True ???
+        self._add_answer = config.get("add_answer", False)
 
     def load_item(self, idx):
         sample_info = self.annotation_db[idx]
@@ -42,6 +42,10 @@ class MaskedVQA2Dataset(VQA2Dataset):
             current_sample.image = self.image_db.from_path(image_path)["images"][0]
 
         current_sample = self._add_masked_question(sample_info, current_sample)
+        
+        # Add details for knowledge entities
+        current_sample = self.add_entity_details(current_sample)
+
         if self._add_answer:
             current_sample = self.add_answer_info(sample_info, current_sample)
         return current_sample

@@ -7,15 +7,6 @@ model_config:
     pooler_strategy: vqa
     use_knwlg: true
     knwlg_size: 300
-    # losses:
-    # - type: multi
-    #   params:
-    #   - type: logit_bce
-    #     weight: 1
-    #     params: {}
-    #   - type: knwlg_reg
-    #     weight: 100
-    #     params: {}
     losses:
     - type: logit_bce
     - type: knwlg_reg
