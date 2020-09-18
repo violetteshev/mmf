@@ -33,7 +33,7 @@ class TrainerReportingMixin(ABC):
                 loss_key = report.dataset_type + "/total_loss"
                 reduced_loss = sum([loss.mean() for loss in reduced_loss_dict.values()])
                 if hasattr(reduced_loss, "item"):
-                    reduced_loss = reduced_loss.item()
+                    reduced_loss = reduced_loss.detach().item()
 
                 registry.register(loss_key, reduced_loss)
                 meter_update_dict.update({loss_key: reduced_loss})

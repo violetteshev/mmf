@@ -33,3 +33,4 @@ training:
   lr_scheduler: true
   # Don't forget to update schedule_attributes if you update this
   max_updates: 11000
+  find_unused_parameters: True
