@@ -9,13 +9,13 @@ from transformers.modeling_bert import (
     BertAttention,
     BertEmbeddings,
     BertEncoder,
-    BertIntermediate,
     BertLayer,
     BertModel,
-    BertOutput,
     BertSelfAttention,
     BertSelfOutput,
 )
+from transformers.modeling_roberta import RobertaEmbeddings
+from transformers.modeling_utils import PreTrainedModel
 
 
 def replace_with_jit():
@@ -29,6 +29,8 @@ def replace_with_jit():
     BertSelfAttention.forward = BertSelfAttentionJit.forward
     BertSelfAttention.transpose_for_scores = BertSelfAttentionJit.transpose_for_scores
     BertModel.forward = BertModelJit.forward
+    PreTrainedModel.__jit_unused_properties__ = ["base_model", "dummy_inputs"]
+    RobertaEmbeddings.forward = RobertaEmbeddingsJit.forward
 
 
 class BertEmbeddingsJit(BertEmbeddings):
@@ -37,6 +39,9 @@ class BertEmbeddingsJit(BertEmbeddings):
     https://github.com/huggingface/transformers/blob/v2.3.0/transformers/modeling_bert.py # noqa
 
     Modifies the `forward` function
+
+    Changes to `forward` function ::
+        Typed inputs and modified device to be input_ids.device by default
     """
 
     def forward(
@@ -187,7 +192,7 @@ class BertAttentionJit(BertAttention):
         return outputs
 
 
-class BertLayerJit(nn.Module):
+class BertLayerJit(BertLayer):
     """
     Torchscriptable version of `BertLayer` from Huggingface transformers v2.3.0
     https://github.com/huggingface/transformers/blob/v2.3.0/transformers/modeling_bert.py # noqa
@@ -197,12 +202,6 @@ class BertLayerJit(nn.Module):
     Changes to `forward` function::
         Typed inputs and modifies the output to be a List[Tensor]
     """
-
-    def __init__(self, config):
-        super().__init__()
-        self.attention = BertAttentionJit(config)
-        self.intermediate = BertIntermediate(config)
-        self.output = BertOutput(config)
 
     def forward(
         self,
@@ -226,7 +225,7 @@ class BertLayerJit(nn.Module):
         return outputs
 
 
-class BertEncoderJit(nn.Module):
+class BertEncoderJit(BertEncoder):
     """
     Torchscriptable version of `BertEncoder` from Huggingface transformers v2.3.0
     https://github.com/huggingface/transformers/blob/v2.3.0/transformers/modeling_bert.py # noqa
@@ -238,14 +237,6 @@ class BertEncoderJit(nn.Module):
         mode. Due to different possible types when `output_hidden_states` or
         `output_attentions` are enable, we do not support these in scripting mode
     """
-
-    def __init__(self, config):
-        super().__init__()
-        self.output_attentions = config.output_attentions
-        self.output_hidden_states = config.output_hidden_states
-        self.layer = nn.ModuleList(
-            [BertLayerJit(config) for _ in range(config.num_hidden_layers)]
-        )
 
     def forward(
         self,
@@ -392,3 +383,53 @@ class BertModelJit(BertModel):
         # add hidden_states and attentions if they are here
         outputs = (sequence_output, pooled_output, encoder_outputs[1:])
         return outputs  # sequence_output, pooled_output, (hidden_states), (attentions)
+
+
+class RobertaEmbeddingsJit(RobertaEmbeddings):
+    """
+    Torchscriptable version of `RobertaEmbeddings` from Huggingface transformers v2.3.0
+    https://github.com/huggingface/transformers/blob/v2.3.0/transformers/modeling_roberta.py # noqa
+
+    Modifies the `forward` function
+
+    Changes to `forward` function ::
+        Typed inputs and modified device to be input_ids.device by default
+    """
+
+    def forward(
+        self,
+        input_ids: Tensor,
+        token_type_ids: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
+        inputs_embeds: Optional[Tensor] = None,
+    ):
+        if input_ids is not None:
+            input_shape = input_ids.size()
+        else:
+            input_shape = inputs_embeds.size()[:-1]
+
+        seq_length = input_shape[1]
+        device = inputs_embeds.device if inputs_embeds is not None else input_ids.device
+
+        if position_ids is None:
+            # Position numbers begin at padding_idx+1. Padding symbols are ignored.
+            # cf. fairseq's `utils.make_positions`
+            position_ids = torch.arange(
+                self.padding_idx + 1,
+                seq_length + self.padding_idx + 1,
+                dtype=torch.long,
+                device=device,
+            )
+            position_ids = position_ids.unsqueeze(0).expand(input_shape)
+        if token_type_ids is None:
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+
+        if inputs_embeds is None:
+            inputs_embeds = self.word_embeddings(input_ids)
+        position_embeddings = self.position_embeddings(position_ids)
+        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+
+        embeddings = inputs_embeds + position_embeddings + token_type_embeddings
+        embeddings = self.LayerNorm(embeddings)
+        embeddings = self.dropout(embeddings)
+        return embeddings

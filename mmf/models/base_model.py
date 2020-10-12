@@ -74,7 +74,7 @@ class BaseModel(nn.Module):
         return self._is_pretrained
 
     @is_pretrained.setter
-    def is_pretrained(self, x):
+    def is_pretrained(self, x: bool):
         self._is_pretrained = x
 
     def build(self):
@@ -170,8 +170,10 @@ class BaseModel(nn.Module):
             assert isinstance(
                 model_output["losses"], collections.abc.Mapping
             ), "'losses' must be a dict."
-        else:
+        elif hasattr(self, "losses"):
             model_output["losses"] = self.losses(sample_list, model_output)
+        else:
+            model_output["losses"] = {}
 
         return model_output
 
