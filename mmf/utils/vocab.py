@@ -28,6 +28,11 @@ class Vocab:
 
             self.vocab = BaseVocab(*args, **params)
 
+        elif vocab_type == "gan":
+            if params["vocab_file"] is None:
+                raise ValueError("No vocab path passed for vocab")
+            self.vocab = GanVocab(*args, **params)
+
         elif vocab_type == "custom":
             if params["vocab_file"] is None or params["embedding_file"] is None:
                 raise ValueError("No vocab path or embedding_file passed for vocab")
@@ -207,6 +212,123 @@ class BaseVocab:
             return torch.nn.Sequential(
                 [embedding, torch.nn.Linear(vector_dim, embedding_dim)]
             )
+
+
+class GanVocab:
+    def __init__(self, vocab_file, embedding_dim=100, data_dir=None, *args, **kwargs):
+        self.type = "gan"
+
+        self.PAD_INDEX = 0
+        self.UNK_INDEX = 0
+        self.EOS_INDEX = 0
+        self.SOS_INDEX = 0
+        self.PAD_TOKEN = "<pad>"
+        self.SOS_TOKEN = "<s>"
+        self.EOS_TOKEN = "</s>"
+        self.UNK_TOKEN = "<unk>"
+
+        self.word_dict = {}
+        self.itos = {}
+
+        self.itos[self.PAD_INDEX] = self.PAD_TOKEN
+
+        self.word_dict[self.SOS_TOKEN] = self.SOS_INDEX
+        self.word_dict[self.EOS_TOKEN] = self.EOS_INDEX
+        self.word_dict[self.PAD_TOKEN] = self.PAD_INDEX
+        self.word_dict[self.UNK_TOKEN] = self.UNK_INDEX
+
+        index = len(self.itos.keys())
+
+        self.total_predefined = len(self.itos.keys())
+
+        if vocab_file is not None:
+            if not os.path.isabs(vocab_file) and data_dir is not None:
+                vocab_file = os.path.join(data_dir, vocab_file)
+                vocab_file = get_absolute_path(vocab_file)
+
+            if not PathManager.exists(vocab_file):
+                raise RuntimeError("Vocab not found at " + vocab_file)
+
+            with PathManager.open(vocab_file, "r") as f:
+                for line in f:
+                    self.itos[index] = line.strip()
+                    self.word_dict[line.strip()] = index
+                    index += 1
+
+        self.word_dict[self.SOS_TOKEN] = self.SOS_INDEX
+        self.word_dict[self.EOS_TOKEN] = self.EOS_INDEX
+        self.word_dict[self.PAD_TOKEN] = self.PAD_INDEX
+        self.word_dict[self.UNK_TOKEN] = self.UNK_INDEX
+        # Return unk index by default
+        self.stoi = defaultdict(self.get_unk_index)
+        self.stoi.update(self.word_dict)
+
+        self.vectors = torch.FloatTensor(self.get_size(), embedding_dim)
+    
+    def get_itos(self):
+        return self.itos
+
+    def get_stoi(self):
+        return self.stoi
+
+    def get_size(self):
+        return len(self.itos)
+
+    def get_pad_index(self):
+        return self.PAD_INDEX
+
+    def get_pad_token(self):
+        return self.PAD_TOKEN
+
+    def get_start_index(self):
+        return self.SOS_INDEX
+
+    def get_start_token(self):
+        return self.SOS_TOKEN
+
+    def get_end_index(self):
+        return self.EOS_INDEX
+
+    def get_end_token(self):
+        return self.EOS_TOKEN
+
+    def get_unk_index(self):
+        return self.UNK_INDEX
+
+    def get_unk_token(self):
+        return self.UNK_TOKEN
+
+    def get_vectors(self):
+        return getattr(self, "vectors", None)
+
+    def get_embedding(self, cls, **embedding_kwargs):
+        vector_dim = len(self.vectors[0])
+        embedding_kwargs["vocab_size"] = self.get_size()
+
+        embedding_dim = embedding_kwargs["embedding_dim"]
+        embedding_kwargs["embedding_dim"] = vector_dim
+
+        embedding = None
+
+        if cls == torch.nn.Embedding:
+            embedding = torch.nn.Embedding(self.get_size(), vector_dim)
+        else:
+            embedding = cls(**embedding_kwargs)
+
+        if hasattr(embedding, "embedding"):
+            embedding.embedding = torch.nn.Embedding.from_pretrained(
+                self.vectors, freeze=False
+            )
+        else:
+            embedding = torch.nn.Embedding.from_pretrained(self.vectors, freeze=False)
+
+        if vector_dim == embedding_dim:
+            return embedding
+        else:
+            return torch.nn.Sequential(
+                [embedding, torch.nn.Linear(vector_dim, embedding_dim)]
+            )
+
 
 
 class CustomVocab(BaseVocab):

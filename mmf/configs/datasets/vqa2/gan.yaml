@@ -1,0 +1,46 @@
+dataset_config:
+  gan_vqa2:
+    data_dir: ${env.data_dir}/datasets
+    depth_first: false
+    fast_read: false
+    use_images: false
+    add_answer: false
+    use_features: true
+    zoo_requirements:
+    - coco.defaults
+    - vqa2.defaults
+    features:
+      train:
+      - coco/defaults/features/trainval2014.lmdb
+      - coco/defaults/features/trainval2014.lmdb
+      val:
+      - coco/defaults/features/trainval2014.lmdb
+      test:
+      - coco/defaults/features/trainval2014.lmdb
+    annotations:
+      train:
+      - vqa2/defaults/annotations/imdb_gan_train.npy
+      - vqa2/defaults/annotations/imdb_gan_nominival.npy
+      val:
+      - vqa2/defaults/annotations/imdb_gan_minival.npy
+      test:
+      - vqa2/defaults/annotations/imdb_gan_minival.npy
+    max_features: 100
+    max_pred_ans: 5
+    use_image_feature_masks: false
+    processors:
+      text_processor:
+        type: vocab
+        params:
+          max_length: 20
+          vocab:
+            type: gan
+            vocab_file: vqa2/defaults/extras/vocabs/coco_gan_vocab.txt
+          preprocessor:
+            type: simple_sentence
+            params: {}
+    return_features_info: false
+    # Return OCR information
+    use_ocr: false
+    # Return spatial information of OCR tokens if present
+    use_ocr_info: false

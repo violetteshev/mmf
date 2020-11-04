@@ -1,0 +1,5 @@
+model_config:
+  vqagan:
+    model_data_dir: ${env.data_dir}
+    losses:
+    - type: logit_bce
