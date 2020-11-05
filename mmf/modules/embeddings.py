@@ -684,8 +684,7 @@ class RNNEmbedding(nn.Module):
         emb = self.drop(self.encoder(captions))
         #
         # Returns: a PackedSequence object
-        cap_lens = cap_lens.data.tolist()
-        emb = pack_padded_sequence(emb, cap_lens, batch_first=True)
+        emb = pack_padded_sequence(emb, cap_lens.cpu(), batch_first=True, enforce_sorted=False)
         # #hidden and memory (num_layers * num_directions, batch, hidden_size):
         # tensor containing the initial hidden state for each element in batch.
         # #output (batch, seq_len, hidden_size * num_directions)
@@ -697,6 +696,7 @@ class RNNEmbedding(nn.Module):
         output = pad_packed_sequence(output, batch_first=True)[0]
         # output = self.drop(output)
         # --> batch x hidden_size*num_directions x seq_len
+        # TODO: Check transpose!
         words_emb = output.transpose(1, 2)
         # --> batch x num_directions*hidden_size
         if self.rnn_type == 'LSTM':

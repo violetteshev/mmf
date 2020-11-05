@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import copy
+from random import sample
 
 import omegaconf
 import torch
@@ -8,6 +9,26 @@ from mmf.models.base_model import BaseModel
 from mmf.modules.embeddings import RNNEmbedding
 from mmf.modules.gan_models import DMGAN_G
 from torch import nn
+
+
+def weights_init(m):
+    # orthogonal_
+    # xavier_uniform_(
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        #print(m.state_dict().keys())
+        if list(m.state_dict().keys())[0] == 'weight':
+            nn.init.orthogonal_(m.weight.data, 1.0)
+        elif list(m.state_dict().keys())[3] == 'weight_bar':
+            nn.init.orthogonal_(m.weight_bar.data, 1.0)
+        #nn.init.orthogonal(m.weight.data, 1.0)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+    elif classname.find('Linear') != -1:
+        nn.init.orthogonal_(m.weight.data, 1.0)
+        if m.bias is not None:
+            m.bias.data.fill_(0.0)
 
 
 @registry.register_model("vqagan")
@@ -49,7 +70,7 @@ class VQAGAN(BaseModel):
             self.generator = DMGAN_G(**generator_config["params"])
 
         # Initialize weights
-        self.generator.apply(self._weights_init)
+        self.generator.apply(weights_init)
 
         # Load pretrained generator
         generator_path = self.config["generator_path"]
@@ -63,27 +84,39 @@ class VQAGAN(BaseModel):
                 p.requires_grad = False
             self.generator.eval()
 
-    def _weights_init(m):
-        # orthogonal_
-        # xavier_uniform_(
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            #print(m.state_dict().keys())
-            if list(m.state_dict().keys())[0] == 'weight':
-                nn.init.orthogonal_(m.weight.data, 1.0)
-            elif list(m.state_dict().keys())[3] == 'weight_bar':
-                nn.init.orthogonal_(m.weight_bar.data, 1.0)
-            #nn.init.orthogonal(m.weight.data, 1.0)
-        elif classname.find('BatchNorm') != -1:
-            m.weight.data.normal_(1.0, 0.02)
-            m.bias.data.fill_(0)
-        elif classname.find('Linear') != -1:
-            nn.init.orthogonal_(m.weight.data, 1.0)
-            if m.bias is not None:
-                m.bias.data.fill_(0.0)
+    def get_optimizer_parameters(self, config):
+        params = []
+        if self.config["train_generator"]:
+            params.append({"params": self.generator.parameters()})
+        
+        if self.config["train_text_encoder"]:
+            params.append({"params": self.text_encoder.parameters()})
+
+        return params
 
     def forward(self, sample_list):
-        t = sample_list
+        captions = sample_list["captions"]
+        cap_lens = sample_list["cap_len"]
+
+        # View captions as one batch
+        batch_size = captions.size(0)*captions.size(1)
+        captions = captions.view(batch_size, -1)
+        cap_lens = cap_lens.view(batch_size)
+
+        # Get text embeddings
+        hidden = self.text_encoder.init_hidden(batch_size) # TODO: should it require grad?
+        words_embs, sent_emb = self.text_encoder(captions, cap_lens, hidden)
+        words_embs, sent_emb = words_embs.detach(), sent_emb.detach()
+        mask = (captions == 0)
+        num_words = words_embs.size(2)
+        if mask.size(1) > num_words:
+            mask = mask[:, :num_words]
+
+        # # Generate images
+        # noise = torch.randn(batch_size, nz)
+        # noise = noise.cuda()
+        # fake_imgs, _, mu, logvar = netG(noise, sent_emb, words_embs, mask, cap_lens)
+
         model_output = {"scores": 0}
 
         return model_output
