@@ -20,9 +20,17 @@ class GANVQA2Dataset(VQA2Dataset):
         sample_info = self.annotation_db[idx]
         current_sample = Sample()
 
+        # Take only max_pred_ans from predicted answers
         pred_answers = sample_info["pred_answers"][:self.max_pred_ans]
         quest_text = sample_info["question_str"]
+        
+        # Create targets, 1 for correct predicted answers, 0 for incorrect 
+        targets = torch.zeros(len(pred_answers))
+        correct_idx = [idx for idx, ans in enumerate(pred_answers) if ans in sample_info["all_answers"]]
+        targets[correct_idx] = 1
+        current_sample.targets = targets
 
+        # Append each answer to question and peocess
         all_text = []
         all_length = []
         for ans in pred_answers:
@@ -30,7 +38,6 @@ class GANVQA2Dataset(VQA2Dataset):
             processed_question = self.text_processor(text_processor_argument)
             all_text.append(processed_question["text"])
             all_length.append(processed_question["length"])
-            
 
         current_sample.captions = torch.stack(all_text, dim=0)
         current_sample.cap_len = torch.stack(all_length, dim=0)

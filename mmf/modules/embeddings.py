@@ -15,6 +15,7 @@ from mmf.modules.layers import AttnPool1d, Identity
 from mmf.utils.file_io import PathManager
 from mmf.utils.vocab import Vocab
 from torch import Tensor, nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from transformers.modeling_bert import BertEmbeddings
 
 
@@ -624,3 +625,83 @@ class TwoBranchEmbedding(nn.Module):
         x_cbn = self.cbn(x, v)
 
         return x_sga, x_cbn
+
+
+############## Text2Image Encoder-Decoder #######
+class RNNEmbedding(nn.Module):
+    def __init__(self, **kwargs):
+        super(RNNEmbedding, self).__init__()
+        self.ntoken = kwargs["vocab_size"]
+        self.ninput = kwargs["embed_size"]  # size of each embedding vector
+        self.drop_prob = kwargs["drop_prob"]  # probability of an element to be zeroed
+        self.nlayers = kwargs["nlayers"]  # Number of recurrent layers
+        self.bidirectional = kwargs["bidirectional"]
+        self.rnn_type = kwargs["rnn_type"]
+        if self.bidirectional:
+            self.num_directions = 2
+        else:
+            self.num_directions = 1
+        # number of features in the hidden state
+        self.nhidden = kwargs["nhidden"] // self.num_directions
+
+        self.define_module()
+        self.init_weights()
+
+    def define_module(self):
+        self.encoder = nn.Embedding(self.ntoken, self.ninput)
+        self.drop = nn.Dropout(self.drop_prob)
+        if self.rnn_type == 'LSTM':
+            # dropout: If non-zero, introduces a dropout layer on
+            # the outputs of each RNN layer except the last layer
+            # TODO: check nlayers
+            self.rnn = nn.LSTM(self.ninput, self.nhidden,
+                               self.nlayers, batch_first=True,
+                               dropout=self.drop_prob,
+                               bidirectional=self.bidirectional)
+        elif self.rnn_type == 'GRU':
+            self.rnn = nn.GRU(self.ninput, self.nhidden,
+                              self.nlayers, batch_first=True,
+                              dropout=self.drop_prob,
+                              bidirectional=self.bidirectional)
+        else:
+            raise NotImplementedError
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+
+    def init_hidden(self, bsz):
+        weight = next(self.parameters()).data
+        if self.rnn_type == 'LSTM':
+            return (weight.new_zeros(self.nlayers * self.num_directions, bsz, self.nhidden),
+                    weight.new_zeros(self.nlayers * self.num_directions, bsz, self.nhidden))
+        else:
+            return weight.new_zeros(self.nlayers * self.num_directions, bsz, self.nhidden)
+
+    def forward(self, captions, cap_lens, hidden, mask=None):
+        # input: torch.LongTensor of size batch x n_steps
+        # --> emb: batch x n_steps x ninput
+        emb = self.drop(self.encoder(captions))
+        #
+        # Returns: a PackedSequence object
+        cap_lens = cap_lens.data.tolist()
+        emb = pack_padded_sequence(emb, cap_lens, batch_first=True)
+        # #hidden and memory (num_layers * num_directions, batch, hidden_size):
+        # tensor containing the initial hidden state for each element in batch.
+        # #output (batch, seq_len, hidden_size * num_directions)
+        # #or a PackedSequence object:
+        # tensor containing output features (h_t) from the last layer of RNN
+        output, hidden = self.rnn(emb, hidden)
+        # PackedSequence object
+        # --> (batch, seq_len, hidden_size * num_directions)
+        output = pad_packed_sequence(output, batch_first=True)[0]
+        # output = self.drop(output)
+        # --> batch x hidden_size*num_directions x seq_len
+        words_emb = output.transpose(1, 2)
+        # --> batch x num_directions*hidden_size
+        if self.rnn_type == 'LSTM':
+            sent_emb = hidden[0].transpose(0, 1).contiguous()
+        else:
+            sent_emb = hidden.transpose(0, 1).contiguous()
+        sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)
+        return words_emb, sent_emb

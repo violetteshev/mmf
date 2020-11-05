@@ -1,5 +1,29 @@
 model_config:
   vqagan:
     model_data_dir: ${env.data_dir}
+    text_encoder_path: ${model_config.vqagan.model_data_dir}/models/DAMSMencoders/coco/text_encoder100.pth
+    generator_path: ${model_config.vqagan.model_data_dir}/models/GAN/coco/DMGAN.pth
+    train_text_encoder: False
+    train_generator: True
+    text_embeddings:
+    - type: rnn
+      params:
+        rnn_type: LSTM
+        embed_size: 300
+        drop_prob: 0.5
+        nhidden: 256
+        nlayers: 1
+        bidirectional: True
+        vocab_size: 27297
+    generator:
+    - type: DMGAN
+      params:
+        gf_dim: 64
+        text_dim: 256
+        condition_dim: 100
+        z_dim: 100
+        r_num: 3
+        branch_num: 3
+
     losses:
     - type: logit_bce

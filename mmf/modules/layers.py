@@ -756,3 +756,49 @@ class AttnPool1d(nn.Module):
         self.p_attn = nn.functional.softmax(score, dim=-1)
 
         return torch.matmul(self.p_attn, value).view(b, self.num_attn, -1)
+
+
+class Interpolate(nn.Module):
+    def __init__(self, scale_factor, mode, size=None):
+        super(Interpolate, self).__init__()
+        self.interp = nn.functional.interpolate
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.size = size
+
+    def forward(self, x):
+        x = self.interp(x, scale_factor=self.scale_factor, mode=self.mode, size=self.size)
+        return x
+
+
+# Upsale the spatial size by a factor of 2
+class UpBlock(nn.Module):
+    def __init__(self, in_planes, out_planes):
+        super(UpBlock, self).__init__()
+        self.block = nn.Sequential(
+            Interpolate(scale_factor=2, mode='nearest'),
+            nn.Conv2d(in_planes, out_planes*2, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(out_planes * 2),
+            nn.GLU()
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class ResBlock(nn.Module):
+    def __init__(self, channel_num):
+        super(ResBlock, self).__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(channel_num, channel_num*2, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(channel_num * 2),
+            nn.GLU(),
+            nn.Conv2d(channel_num, channel_num, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(channel_num)
+        )
+
+    def forward(self, x):
+        residual = x
+        out = self.block(x)
+        out += residual
+        return out
