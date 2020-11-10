@@ -3,20 +3,20 @@ dataset_config:
     data_dir: ${env.data_dir}/datasets
     depth_first: false
     fast_read: false
-    use_images: false
+    use_images: true
     add_answer: false
-    use_features: true
+    use_features: false
     zoo_requirements:
     - coco.defaults
     - vqa2.defaults
-    features:
+    images:
       train:
-      - coco/defaults/features/trainval2014.lmdb
-      - coco/defaults/features/trainval2014.lmdb
+      - coco/defaults/images/train2014
+      - coco/defaults/images/val2014
       val:
-      - coco/defaults/features/trainval2014.lmdb
+      - coco/defaults/images/val2014
       test:
-      - coco/defaults/features/trainval2014.lmdb
+      - coco/defaults/images/val2014
     annotations:
       train:
       - vqa2/defaults/annotations/imdb_gan_train.npy
@@ -26,7 +26,7 @@ dataset_config:
       test:
       - vqa2/defaults/annotations/imdb_gan_minival.npy
     max_features: 100
-    max_pred_ans: 5
+    max_pred_ans: 2
     use_image_feature_masks: false
     processors:
       text_processor:
@@ -39,6 +39,22 @@ dataset_config:
           preprocessor:
             type: simple_sentence
             params: {}
+      image_processor:
+          type: torchvision_transforms
+          params:
+            transforms:
+            - type: Resize
+              params:
+                  size: [304, 304]
+            - type: RandomCrop
+              params:
+                size: [256, 256]
+            - RandomHorizontalFlip
+            - ToTensor
+            - type: Normalize
+              params:
+                mean: [0.5, 0.5, 0.5]
+                std: [0.5, 0.5, 0.5]
     return_features_info: false
     # Return OCR information
     use_ocr: false

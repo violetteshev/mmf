@@ -779,7 +779,7 @@ class UpBlock(nn.Module):
             Interpolate(scale_factor=2, mode='nearest'),
             nn.Conv2d(in_planes, out_planes*2, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(out_planes * 2),
-            nn.GLU()
+            nn.GLU(dim=1)
         )
 
     def forward(self, x):
@@ -792,7 +792,7 @@ class ResBlock(nn.Module):
         self.block = nn.Sequential(
             nn.Conv2d(channel_num, channel_num*2, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(channel_num * 2),
-            nn.GLU(),
+            nn.GLU(dim=1),
             nn.Conv2d(channel_num, channel_num, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(channel_num)
         )

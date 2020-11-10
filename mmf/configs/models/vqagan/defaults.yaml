@@ -2,8 +2,10 @@ model_config:
   vqagan:
     model_data_dir: ${env.data_dir}
     text_encoder_path: ${model_config.vqagan.model_data_dir}/models/DAMSMencoders/coco/text_encoder100.pth
+    image_encoder_path: ${model_config.vqagan.model_data_dir}/models/DAMSMencoders/coco/image_encoder100.pth
     generator_path: ${model_config.vqagan.model_data_dir}/models/GAN/coco/DMGAN.pth
     train_text_encoder: False
+    train_image_encoder: False
     train_generator: True
     text_embeddings:
     - type: rnn
@@ -15,6 +17,10 @@ model_config:
         nlayers: 1
         bidirectional: True
         vocab_size: 27297
+    image_embeddings:
+    - type: inception
+      params:
+        nef: 256
     generator:
     - type: DMGAN
       params:
@@ -26,4 +32,4 @@ model_config:
         branch_num: 3
 
     losses:
-    - type: logit_bce
+    - type: img_feat_hinge

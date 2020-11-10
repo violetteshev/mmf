@@ -129,11 +129,15 @@ class MMFTrainer(
         dataset_type = []
         if "val" in self.run_type:
             dataset_type.append("val")
-        if any(rt in self.run_type for rt in ["inference", "test", "predict"]):
+        if any(rt in self.run_type for rt in ["inference", "test", "predict", "generation"]):
             dataset_type.append("test")
 
         for dataset in dataset_type:
-            if self.config.evaluation.predict:
+            if self.run_type == "generation":
+                self.on_prediction_start()
+                self.generation_loop(dataset)
+                self.on_prediction_end()
+            elif self.config.evaluation.predict:
                 self.on_prediction_start()
                 self.prediction_loop(dataset)
                 self.on_prediction_end()

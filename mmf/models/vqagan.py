@@ -6,7 +6,7 @@ import omegaconf
 import torch
 from mmf.common.registry import registry
 from mmf.models.base_model import BaseModel
-from mmf.modules.embeddings import RNNEmbedding
+from mmf.modules.embeddings import RNNEmbedding, InceptionEmbedding
 from mmf.modules.gan_models import DMGAN_G
 from torch import nn
 
@@ -45,6 +45,7 @@ class VQAGAN(BaseModel):
 
     def build(self):
         self._build_text_encoder()
+        self._build_image_encoder()
         self._build_generator()
 
     def _build_text_encoder(self):
@@ -64,8 +65,27 @@ class VQAGAN(BaseModel):
                 p.requires_grad = False
             self.text_encoder.eval()
 
+    def _build_image_encoder(self):
+        image_embedding_config = self.config["image_embeddings"][0]
+        if image_embedding_config["type"] == "inception":
+            self.image_encoder = InceptionEmbedding(**image_embedding_config["params"])
+        
+        # Load pretrained encoder
+        encoder_path = self.config["image_encoder_path"]
+        if encoder_path != '':
+            state_dict = torch.load(encoder_path, map_location=lambda storage, loc: storage)
+            self.image_encoder.load_state_dict(state_dict)
+        
+        # Freeze image encoder
+        if not self.config["train_image_encoder"]:
+            for p in self.image_encoder.parameters():
+                p.requires_grad = False
+            self.image_encoder.eval()
+
     def _build_generator(self):
         generator_config = self.config["generator"][0]
+        self.z_dim = generator_config["params"]["z_dim"]
+        
         if generator_config["type"] == "DMGAN":
             self.generator = DMGAN_G(**generator_config["params"])
 
@@ -97,7 +117,11 @@ class VQAGAN(BaseModel):
     def forward(self, sample_list):
         captions = sample_list["captions"]
         cap_lens = sample_list["cap_len"]
+        real_imgs = sample_list["image"]
 
+        #real_batch_size = captions.size(0)
+        #caption_num = captions.size(1)
+       
         # View captions as one batch
         batch_size = captions.size(0)*captions.size(1)
         captions = captions.view(batch_size, -1)
@@ -112,11 +136,23 @@ class VQAGAN(BaseModel):
         if mask.size(1) > num_words:
             mask = mask[:, :num_words]
 
-        # # Generate images
-        # noise = torch.randn(batch_size, nz)
-        # noise = noise.cuda()
-        # fake_imgs, _, mu, logvar = netG(noise, sent_emb, words_embs, mask, cap_lens)
+        # Generate images
+        noise = torch.randn(batch_size, self.z_dim, device=words_embs.device)
+        #noise = torch.randn(real_batch_size, 1, self.z_dim, device=words_embs.device)
+        #noise = noise.repeat(1, caption_num, 1).view(batch_size, -1)
 
-        model_output = {"scores": 0}
+        fake_imgs, _, mu, logvar = self.generator(noise, sent_emb, words_embs, mask, cap_lens)
+
+        # Extract image features
+        fake_region_features, fake_cnn_code = self.image_encoder(fake_imgs[-1])
+        real_region_features, real_cnn_code = self.image_encoder(real_imgs)
+
+        model_output = {
+            "image": fake_imgs[-1],
+            "region_features": fake_region_features,
+            "cnn_code": fake_cnn_code,
+            "gt_region_features": real_region_features,
+            "gt_cnn_code": real_cnn_code,     
+        }
 
         return model_output

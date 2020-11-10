@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from mmf.modules.attention import AttentionLayer, SelfAttention, SelfGuidedAttention
 from mmf.modules.bottleneck import MovieBottleneck
 from mmf.modules.layers import AttnPool1d, Identity
@@ -705,3 +706,71 @@ class RNNEmbedding(nn.Module):
             sent_emb = hidden.transpose(0, 1).contiguous()
         sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)
         return words_emb, sent_emb
+
+
+class InceptionEmbedding(nn.Module):
+    def __init__(self, **kwargs):
+        super(InceptionEmbedding, self).__init__()
+        self.nef = kwargs["nef"]
+
+        inception_model = torch.hub.load('pytorch/vision:v0.6.0', 'inception_v3', pretrained=True)
+        self.define_module(inception_model)
+        self.init_weights()
+
+    def define_module(self, model):
+        self.Conv2d_1a_3x3 = model.Conv2d_1a_3x3
+        self.Conv2d_2a_3x3 = model.Conv2d_2a_3x3
+        self.Conv2d_2b_3x3 = model.Conv2d_2b_3x3
+        self.Conv2d_3b_1x1 = model.Conv2d_3b_1x1
+        self.Conv2d_4a_3x3 = model.Conv2d_4a_3x3
+        self.Mixed_5b = model.Mixed_5b
+        self.Mixed_5c = model.Mixed_5c
+        self.Mixed_5d = model.Mixed_5d
+        self.Mixed_6a = model.Mixed_6a
+        self.Mixed_6b = model.Mixed_6b
+        self.Mixed_6c = model.Mixed_6c
+        self.Mixed_6d = model.Mixed_6d
+        self.Mixed_6e = model.Mixed_6e
+        self.Mixed_7a = model.Mixed_7a
+        self.Mixed_7b = model.Mixed_7b
+        self.Mixed_7c = model.Mixed_7c
+        self.emb_features = nn.Conv2d(768, self.nef, kernel_size=1, stride=1, padding=0, bias=False)
+        self.emb_cnn_code = nn.Linear(2048, self.nef)
+
+    def init_weights(self):
+        initrange = 0.1
+        self.emb_features.weight.data.uniform_(-initrange, initrange)
+        self.emb_cnn_code.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, x):
+        # --> fixed-size input: batch x 3 x 299 x 299
+        x = nn.functional.interpolate(x, size=(299, 299), mode='bilinear', align_corners=True)
+        x = self.Conv2d_1a_3x3(x)
+        x = self.Conv2d_2a_3x3(x)
+        x = self.Conv2d_2b_3x3(x)
+        x = F.max_pool2d(x, kernel_size=3, stride=2)
+        x = self.Conv2d_3b_1x1(x)
+        x = self.Conv2d_4a_3x3(x)
+        x = F.max_pool2d(x, kernel_size=3, stride=2)
+        x = self.Mixed_5b(x)
+        x = self.Mixed_5c(x)
+        x = self.Mixed_5d(x)
+        x = self.Mixed_6a(x)
+        x = self.Mixed_6b(x)
+        x = self.Mixed_6c(x)
+        x = self.Mixed_6d(x)
+        x = self.Mixed_6e(x)
+
+        # Image region features
+        features = self.emb_features(x)
+
+        x = self.Mixed_7a(x)
+        x = self.Mixed_7b(x)
+        x = self.Mixed_7c(x)
+        x = F.avg_pool2d(x, kernel_size=8)
+        x = x.view(x.size(0), -1)
+
+        # Global image features
+        cnn_code = self.emb_cnn_code(x)
+
+        return features, cnn_code

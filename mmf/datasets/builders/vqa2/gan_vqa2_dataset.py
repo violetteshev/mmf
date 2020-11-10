@@ -24,8 +24,8 @@ class GANVQA2Dataset(VQA2Dataset):
         pred_answers = sample_info["pred_answers"][:self.max_pred_ans]
         quest_text = sample_info["question_str"]
         
-        # Create targets, 1 for correct predicted answers, 0 for incorrect 
-        targets = torch.zeros(len(pred_answers))
+        # Create targets, 1 for correct predicted answers, -1 for incorrect 
+        targets = (-1)*torch.ones(len(pred_answers))
         correct_idx = [idx for idx, ans in enumerate(pred_answers) if ans in sample_info["all_answers"]]
         targets[correct_idx] = 1
         current_sample.targets = targets

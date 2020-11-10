@@ -570,3 +570,44 @@ class CrossEntropyLoss(nn.Module):
 
     def forward(self, sample_list, model_output):
         return self.loss_fn(model_output["scores"], sample_list.targets)
+
+
+@registry.register_loss("img_feat_triplet")
+class ImgFeatTripletLoss(nn.Module):
+    def __init__(self, params=None):
+        super().__init__()
+        if params is None:
+            params = {}
+        self.loss_fn = nn.TripletMarginLoss(**params, reduction="sum")
+
+    def forward(self, sample_list, model_output):
+        # TODO: implement
+        loss = 0.0
+
+        return loss
+
+
+@registry.register_loss("img_feat_hinge")
+class ImgFeatHingeLoss(nn.Module):
+    def __init__(self, params=None):
+        super().__init__()
+        if params is None:
+            params = {}
+        self.loss_fn = nn.HingeEmbeddingLoss(**params, reduction="sum")
+
+    def forward(self, sample_list, model_output):
+        pred_feat = model_output["cnn_code"]
+        target_feat = model_output["gt_cnn_code"]
+        targets = sample_list["targets"]
+
+        # View with correct sizes
+        batch_size = target_feat.size(0)
+        cap_num = pred_feat.size(0) // batch_size
+        target_feat_expand = target_feat.unsqueeze(dim=1).repeat(1, cap_num, 1).view(batch_size*cap_num, -1)
+        targets_concat = targets.view(batch_size*cap_num)
+
+        # Find pairwise distance and loss
+        dist = F.pairwise_distance(pred_feat, target_feat_expand, p=2.0, eps=1e-06, keepdim=False)
+        loss = self.loss_fn(dist, targets_concat) / batch_size
+
+        return loss

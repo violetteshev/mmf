@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
-from mmf.modules.layers import UpBlock, ResBlock
+from mmf.modules.layers import UpBlock, ResBlock, Interpolate
 
 
 class CA_NET(nn.Module):
@@ -12,7 +12,7 @@ class CA_NET(nn.Module):
         self.t_dim = text_dim
         self.c_dim = condition_dim
         self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
-        self.relu = nn.GLU()
+        self.relu = nn.GLU(dim=1)
 
     def forward(self, text_embedding):
         # Encode
@@ -35,7 +35,7 @@ class INIT_STAGE_G(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(self.in_dim, ngf * 4 * 4 * 2, bias=False),
             nn.BatchNorm1d(ngf * 4 * 4 * 2),
-            nn.GLU())
+            nn.GLU(dim=1))
 
         self.upsample1 = UpBlock(ngf, ngf // 2)
         self.upsample2 = UpBlock(ngf // 2, ngf // 4)
@@ -53,6 +53,7 @@ class INIT_STAGE_G(nn.Module):
         # state size ngf x 4 x 4
         out_code = self.fc(c_z_code)
         out_code = out_code.view(-1, self.gf_dim, 4, 4)
+
         # state size ngf/3 x 8 x 8
         out_code = self.upsample1(out_code)
         # state size ngf/4 x 16 x 16
