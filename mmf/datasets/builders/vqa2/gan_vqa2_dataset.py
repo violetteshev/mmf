@@ -28,7 +28,7 @@ class GANVQA2Dataset(VQA2Dataset):
         targets = (-1)*torch.ones(len(pred_answers))
         correct_idx = [idx for idx, ans in enumerate(pred_answers) if ans in sample_info["all_answers"]]
         targets[correct_idx] = 1
-        current_sample.targets = targets
+        current_sample.gan_targets = targets
 
         # Append each answer to question and peocess
         all_text = []
@@ -64,5 +64,26 @@ class GANVQA2Dataset(VQA2Dataset):
             image_path = sample_info["image_name"] + ".jpg"
             current_sample.image = self.image_db.from_path(image_path)["images"][0]
 
+        current_sample = self.add_answer_info(sample_info, current_sample)
+
         return current_sample
 
+    def add_answer_info(self, sample_info, sample):
+        if "answers" in sample_info:
+            answers = sample_info["answers"]
+            answer_processor_arg = {"answers": answers}
+
+            if self.use_ocr:
+                answer_processor_arg["tokens"] = sample_info["ocr_tokens"]
+            processed_soft_copy_answers = self.answer_processor(answer_processor_arg)
+
+            # sample.answers = processed_soft_copy_answers["answers"]
+            sample.targets = processed_soft_copy_answers["answers_scores"]
+
+        # Process predicted answers
+        pred_answers = sample_info["pred_answers"][:self.max_pred_ans]
+        pred_answer_processor_arg = {"answers": pred_answers}
+        processed_answers = self.answer_processor(pred_answer_processor_arg)
+        sample.pred_answers = processed_answers["answers_indices"][:self.max_pred_ans]
+
+        return sample

@@ -587,6 +587,169 @@ class ImgFeatTripletLoss(nn.Module):
         return loss
 
 
+def cosine_similarity(x1, x2, dim=1, eps=1e-8):
+    """Returns cosine similarity between x1 and x2, computed along dim.
+    """
+    w12 = torch.sum(x1 * x2, dim)
+    w1 = torch.norm(x1, 2, dim)
+    w2 = torch.norm(x2, 2, dim)
+    return (w12 / (w1 * w2).clamp(min=eps)).squeeze()
+
+
+def func_attention(query, context, gamma1):
+    """
+    query: batch x ndf x queryL
+    context: batch x ndf x ih x iw (sourceL=ihxiw)
+    mask: batch_size x sourceL
+    """
+    batch_size, queryL = query.size(0), query.size(2)
+    ih, iw = context.size(2), context.size(3)
+    sourceL = ih * iw
+
+    # --> batch x sourceL x ndf
+    context = context.view(batch_size, -1, sourceL)
+    contextT = torch.transpose(context, 1, 2).contiguous()
+
+    # Get attention
+    # (batch x sourceL x ndf)(batch x ndf x queryL)
+    # -->batch x sourceL x queryL
+    attn = torch.bmm(contextT, query)  # Eq. (7) in AttnGAN paper
+    # --> batch*sourceL x queryL
+    attn = attn.view(batch_size * sourceL, queryL)
+    attn = nn.Softmax(dim=1)(attn)  # Eq. (8)
+
+    # --> batch x sourceL x queryL
+    attn = attn.view(batch_size, sourceL, queryL)
+    # --> batch*queryL x sourceL
+    attn = torch.transpose(attn, 1, 2).contiguous()
+    attn = attn.view(batch_size * queryL, sourceL)
+    #  Eq. (9)
+    attn = attn * gamma1
+    attn = nn.Softmax(dim=1)(attn)
+    attn = attn.view(batch_size, queryL, sourceL)
+    # --> batch x sourceL x queryL
+    attnT = torch.transpose(attn, 1, 2).contiguous()
+
+    # (batch x ndf x sourceL)(batch x sourceL x queryL)
+    # --> batch x ndf x queryL
+    weightedContext = torch.bmm(context, attnT)
+
+    return weightedContext, attn.view(batch_size, -1, ih, iw)
+
+
+def sent_loss(cnn_code, rnn_code, labels, class_ids,
+              batch_size, eps=1e-8):
+    # ### Mask mis-match samples  ###
+    # that come from the same class as the real sample ###
+    masks = []
+    if class_ids is not None:
+        for i in range(batch_size):
+            mask = (class_ids == class_ids[i])
+            mask[i] = 0
+            masks.append(mask.reshape((1, -1)))
+        masks = np.concatenate(masks, 0)
+        # masks: batch_size x batch_size
+        masks = torch.BoolTensor(masks)
+        masks = masks.cuda()
+
+    # --> seq_len x batch_size x nef
+    if cnn_code.dim() == 2:
+        cnn_code = cnn_code.unsqueeze(0)
+        rnn_code = rnn_code.unsqueeze(0)
+
+    # cnn_code_norm / rnn_code_norm: seq_len x batch_size x 1
+    cnn_code_norm = torch.norm(cnn_code, 2, dim=2, keepdim=True)
+    rnn_code_norm = torch.norm(rnn_code, 2, dim=2, keepdim=True)
+    # scores* / norm*: seq_len x batch_size x batch_size
+    scores0 = torch.bmm(cnn_code, rnn_code.transpose(1, 2))
+    norm0 = torch.bmm(cnn_code_norm, rnn_code_norm.transpose(1, 2))
+    scores0 = scores0 / norm0.clamp(min=eps) * 10.0
+
+    # --> batch_size x batch_size
+    scores0 = scores0.squeeze()
+    if class_ids is not None:
+        scores0.data.masked_fill_(masks, -float('inf'))
+    scores1 = scores0.transpose(0, 1)
+    if labels is not None:
+        loss0 = nn.CrossEntropyLoss()(scores0, labels)
+        loss1 = nn.CrossEntropyLoss()(scores1, labels)
+    else:
+        loss0, loss1 = None, None
+    return loss0, loss1
+
+
+def words_loss(img_features, words_emb, labels,
+               cap_lens, class_ids, batch_size):
+    """
+        words_emb(query): batch x nef x seq_len
+        img_features(context): batch x nef x 17 x 17
+    """
+    masks = []
+    att_maps = []
+    similarities = []
+    for i in range(batch_size):
+        if class_ids is not None:
+            mask = (class_ids == class_ids[i])
+            mask[i] = 0
+            masks.append(mask.reshape((1, -1)))
+        # Get the i-th text description
+        words_num = cap_lens[i]
+        # -> 1 x nef x words_num
+        word = words_emb[i, :, :words_num].unsqueeze(0).contiguous()
+        # -> batch_size x nef x words_num
+        word = word.repeat(batch_size, 1, 1)
+        # batch x nef x 17*17
+        context = img_features
+        """
+            word(query): batch x nef x words_num
+            context: batch x nef x 17 x 17
+            weiContext: batch x nef x words_num
+            attn: batch x words_num x 17 x 17
+        """
+        weiContext, attn = func_attention(word, context, 4.0)
+        att_maps.append(attn[i].unsqueeze(0).contiguous())
+        # --> batch_size x words_num x nef
+        word = word.transpose(1, 2).contiguous()
+        weiContext = weiContext.transpose(1, 2).contiguous()
+        # --> batch_size*words_num x nef
+        word = word.view(batch_size * words_num, -1)
+        weiContext = weiContext.view(batch_size * words_num, -1)
+        #
+        # -->batch_size*words_num
+        row_sim = cosine_similarity(word, weiContext)
+        # --> batch_size x words_num
+        row_sim = row_sim.view(batch_size, words_num)
+
+        # Eq. (10)
+        row_sim.mul_(5.0).exp_()
+        row_sim = row_sim.sum(dim=1, keepdim=True)
+        row_sim = torch.log(row_sim)
+
+        # --> 1 x batch_size
+        # similarities(i, j): the similarity between the i-th image and the j-th text description
+        similarities.append(row_sim)
+
+    # batch_size x batch_size
+    similarities = torch.cat(similarities, 1)
+    if class_ids is not None:
+        masks = torch.cat(masks, 0)
+        # masks: batch_size x batch_size
+        masks = torch.BoolTensor(masks)
+        masks = masks.cuda()
+
+    similarities = similarities * 10.0
+    if class_ids is not None:
+        # TODO: UserWarning: masked_fill_ received a mask with dtype torch.uint8, this behavior is now deprecated,please use a mask with dtype torch.bool instead
+        similarities.data.masked_fill_(masks, -float('inf'))
+    similarities1 = similarities.transpose(0, 1)
+    if labels is not None:
+        loss0 = nn.CrossEntropyLoss()(similarities, labels)
+        loss1 = nn.CrossEntropyLoss()(similarities1, labels)
+    else:
+        loss0, loss1 = None, None
+    return loss0, loss1, att_maps
+
+
 @registry.register_loss("img_feat_hinge")
 class ImgFeatHingeLoss(nn.Module):
     def __init__(self, params=None):
@@ -598,7 +761,8 @@ class ImgFeatHingeLoss(nn.Module):
     def forward(self, sample_list, model_output):
         pred_feat = model_output["cnn_code"]
         target_feat = model_output["gt_cnn_code"]
-        targets = sample_list["targets"]
+        targets = sample_list["gan_targets"]
+        gt_pred_answers = sample_list["pred_answers"]
 
         # View with correct sizes
         batch_size = target_feat.size(0)
@@ -609,5 +773,29 @@ class ImgFeatHingeLoss(nn.Module):
         # Find pairwise distance and loss
         dist = F.pairwise_distance(pred_feat, target_feat_expand, p=2.0, eps=1e-06, keepdim=False)
         loss = self.loss_fn(dist, targets_concat) / batch_size
+
+        # Calculate scores
+        dist = dist.view(batch_size, cap_num)
+        _, min_idx = dist.min(dim=1)
+        pred_answers = gt_pred_answers[range(batch_size), min_idx]
+        scores = torch.zeros_like(sample_list["targets"])
+        scores[range(batch_size), pred_answers] = 1
+        model_output["scores"] = scores
+
+        class_ids = sample_list["image_id"].unsqueeze(dim=1).repeat(1, cap_num).view(batch_size*cap_num)
+        match_labels = torch.arange(0, batch_size*cap_num, device=class_ids.device)
+        cap_lens = sample_list["cap_len"].view(-1).tolist()
+        w_loss0, w_loss1, _ = words_loss(model_output["region_features"], model_output["words_embs"],
+                                             match_labels, cap_lens,
+                                             class_ids, batch_size*cap_num)
+        w_loss = (w_loss0 + w_loss1) * 50.0
+
+
+        s_loss0, s_loss1 = sent_loss(pred_feat, model_output["sent_emb"],
+                                        match_labels, class_ids, batch_size*cap_num)
+        s_loss = (s_loss0 + s_loss1) * 50.0
+
+
+        loss += w_loss + s_loss
 
         return loss

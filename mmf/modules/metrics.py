@@ -434,6 +434,29 @@ class VQAEvalAIAccuracy(BaseMetric):
         return model_output["scores"].new_tensor(accuracy, dtype=torch.float)
 
 
+@registry.register_metric("vqagan_accuracy")
+class VQAGANAccuracy(BaseMetric):
+    def __init__(self):
+        super().__init__("vqagan_accuracy")
+
+    def calculate(self, sample_list, model_output, *args, **kwargs):
+
+        output = model_output["scores"]
+        # for three branch movie+mcan model
+        if output.dim() == 3:
+            output = output[:, 0]
+        expected = sample_list["targets"]
+
+        output = self._masked_unk_softmax(output, 1, 0)
+        output = output.argmax(dim=1)  # argmax
+
+        one_hots = expected.new_zeros(*expected.size())
+        one_hots.scatter_(1, output.view(-1, 1), 1)
+        scores = one_hots * expected
+        accuracy = torch.sum(scores) / expected.size(0)
+
+        return accuracy
+
 class RecallAtK(BaseMetric):
     def __init__(self, name="recall@k"):
         super().__init__(name)

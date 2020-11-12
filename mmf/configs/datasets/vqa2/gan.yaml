@@ -29,6 +29,14 @@ dataset_config:
     max_pred_ans: 2
     use_image_feature_masks: false
     processors:
+      answer_processor:
+          type: vqa_answer
+          params:
+            num_answers: 10
+            vocab_file: vqa2/defaults/extras/vocabs/answers_vqa.txt
+            preprocessor:
+              type: simple_word
+              params: {}
       text_processor:
         type: vocab
         params:
